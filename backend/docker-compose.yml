@@ -1,0 +1,26 @@
+# Local PostgreSQL for Xolaris enterprise engines.
+# Usage (from backend/):
+#   docker compose up -d
+#   docker compose down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: xolaris-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xolaris
+      POSTGRES_PASSWORD: xolaris
+      POSTGRES_DB: xolaris
+    ports:
+      - "5432:5432"
+    volumes:
+      - xolaris_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xolaris -d xolaris"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  xolaris_pgdata:
