@@ -115,13 +115,33 @@ def get_ai_harness_container():
 
 
 @lru_cache
+def get_evidence_container():
+    from evidence_repository import EvidenceRepositoryContainer
+
+    return EvidenceRepositoryContainer.from_url(
+        settings.DATABASE_URL,
+        create_tables=settings.CREATE_TABLES,
+    )
+
+
+@lru_cache
+def get_asset_container():
+    from asset_inventory import AssetInventoryContainer
+
+    return AssetInventoryContainer.from_url(
+        settings.DATABASE_URL,
+        create_tables=settings.CREATE_TABLES,
+    )
+
+
+@lru_cache
 def get_scan_ingest_container():
     """Scan / Ingest orchestrator with optional finding pipeline engines."""
     from scan_ingest import ScanIngestContainer
 
-    return ScanIngestContainer.from_url(
-        settings.DATABASE_URL,
-        create_tables=settings.CREATE_TABLES,
+    return ScanIngestContainer(
+        get_asset_container(),
+        get_evidence_container(),
         trust_container=get_trust_container(),
         risk_container=get_risk_container(),
         decision_container=get_decision_container(),
@@ -219,7 +239,7 @@ def map_engine_error(exc: Exception) -> HTTPException:
             status_code=404,
             detail={"code": name, "message": message, "details": details},
         )
-    if name == "AccessDeniedError":
+    if name in {"AccessDeniedError", "TenantIsolationError"}:
         return HTTPException(
             status_code=403,
             detail={"code": name, "message": message, "details": details},

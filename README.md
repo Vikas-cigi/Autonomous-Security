@@ -43,3 +43,8 @@ Scan/Ingest → Evidence → Trust → Risk → Decision → Plan
 `nuclei`, `trivy`, `prowler`, `checkov`, `grype` — see `backend/src/adapters/`.
 
 Simulate scans work without installing scanner binaries (`POST /api/v1/scans` with `"mode": "simulate"`).
+
+After a scan, list persisted records:
+
+- `GET /api/v1/findings?tenant_id=`
+- `GET /api/v1/assets?tenant_id=`

@@ -29,6 +29,8 @@ Open http://localhost:5173
 - **All data is mock** under `src/mocks/`.
 - Interactive state lives in `src/state/DemoContext.tsx`.
 - When wiring the real API, replace mocks with `fetch` to:
+  - `/api/v1/findings`
+  - `/api/v1/assets`
   - `/api/v1/trust`
   - `/api/v1/risk`
   - `/api/v1/decisions`

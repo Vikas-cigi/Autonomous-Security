@@ -10,7 +10,7 @@ Authoritative catalog of all assets known to Xolaris. Findings, remediation, and
 |------|----------------|
 | Asset / owner / BU / environment / relationship storage | Scanner execution |
 | Classification, criticality scoring, exposure | Finding persistence (Evidence Repository) |
-| Cloud + Kubernetes metadata | HTTP APIs (future) |
+| Cloud + Kubernetes metadata | FastAPI routers (`api/v1/assets.py`) |
 | Versioning + audit history | Creating findings |
 
 ## Inputs
@@ -73,14 +73,15 @@ sequenceDiagram
 
 - Swap `AssetRepository` implementation
 - Subclass `CriticalityScorer` for tenant-specific weight curves
-- FastAPI routers later via `AssetInventoryContainer`
+- HTTP read surface: `GET /api/v1/assets` (search, get)
 
 ## Non-goals
 
-- No REST/GraphQL in this module yet
+- No GraphQL
 - No changes to existing platform modules
 
 ## Source paths
 
 - `backend/asset_inventory/`
+- HTTP: `backend/api/v1/assets.py`
 - Package README: `backend/asset_inventory/README.md`

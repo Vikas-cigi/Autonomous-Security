@@ -15,9 +15,16 @@ Central source of truth for normalized ``SecurityFindingObject`` and
 - Search with tenant isolation, pagination, and filters
 - Track lifecycle: Open / In Progress / Resolved / Accepted Risk / False Positive
 
-## Non-goals (this package)
+## HTTP
 
-- No HTTP APIs yet
+Read APIs live on the FastAPI app (not inside this package):
+
+- `GET /api/v1/findings?tenant_id=`
+- `GET /api/v1/findings/{id}`
+- `GET /api/v1/findings/{id}/history`
+
+## Non-goals
+
 - Does not modify Normalization, Policy, Adapters, or AI scaffolds
 
 ## Quick start

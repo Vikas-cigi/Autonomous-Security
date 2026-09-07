@@ -9,9 +9,9 @@ Persist and query canonical `SecurityFindingObject` / `EvidenceObject` records w
 | Owns | Does not own |
 |------|----------------|
 | Finding/evidence storage | Scanner execution |
-| Versions + history + audit log | HTTP APIs (future) |
-| Dedup / correlation / search | Policy evaluation |
-| Lifecycle mapping onto `FindingStatus` | Creating findings from raw JSON |
+| Versions + history + audit log | Policy evaluation |
+| Dedup / correlation / search | Creating findings from raw JSON |
+| Lifecycle mapping onto `FindingStatus` | FastAPI routers (`api/v1/findings.py`) |
 
 ## Inputs
 
@@ -98,14 +98,15 @@ sequenceDiagram
 
 - Swap `EvidenceRepository` implementation (e.g. partitioned shards)
 - Add read models / projections without changing canonical payloads
-- Expose FastAPI routers later using `SearchService` + DI container
+- HTTP read surface: `GET /api/v1/findings` (search, get, history)
 
 ## Non-goals
 
-- No REST/GraphQL in this module yet
+- No GraphQL
 - No changes to existing platform modules
 
 ## Source paths
 
 - `backend/evidence_repository/`
+- HTTP: `backend/api/v1/findings.py`
 - Package README: `backend/evidence_repository/README.md`

@@ -14,9 +14,15 @@ Authoritative catalog of all assets known to Xolaris. Every
 - Versioning + append-only audit history
 - Multi-tenant isolation and search
 
+## HTTP
+
+Read APIs live on the FastAPI app (not inside this package):
+
+- `GET /api/v1/assets?tenant_id=`
+- `GET /api/v1/assets/{id}`
+
 ## Non-goals
 
-- No HTTP APIs yet
 - Does not modify existing platform modules
 
 ## Quick start

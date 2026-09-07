@@ -4,9 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.v1 import (
     ai_harness_router,
     approvals_router,
+    assets_router,
     chat_router,
     decisions_router,
     execution_router,
+    findings_router,
     health_router,
     remediation_plans_router,
     reporting_router,
@@ -32,6 +34,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
     ],
@@ -47,6 +51,8 @@ app.include_router(chat_router)
 _API_V1 = "/api/v1"
 app.include_router(health_router, prefix=_API_V1)
 app.include_router(scan_router, prefix=_API_V1)
+app.include_router(findings_router, prefix=_API_V1)
+app.include_router(assets_router, prefix=_API_V1)
 app.include_router(trust_router, prefix=_API_V1)
 app.include_router(risk_router, prefix=_API_V1)
 app.include_router(decisions_router, prefix=_API_V1)
