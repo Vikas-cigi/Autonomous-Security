@@ -5,6 +5,8 @@
 **Repo:** `https://github.com/Vikas-cigi/Autonomous-Security` · branch `dev`.  
 **Do not rebuild engines.** Host them, persist data, prove a live demo.
 
+**Read first:** [§2 Theory](#2-theory-how-xolaris-works-in-depth) — why the line exists, trust vs risk, why RavenX is not the system of record.
+
 ---
 
 ## 1. What this platform is
@@ -21,13 +23,193 @@ It ingests scanner output, stores canonical findings, scores trust and risk, dec
 4. APIs require an **API key** (not an open internet).  
 5. After a plan is created, **simulation runs** and an **approval is submitted**. Execution stays the current recording adapter (no real patch).
 
+Read **§2 Theory** before installing tools. Commands without that model lead to wiring scanners into the wrong layer.
+
 ---
 
-## 2. Architecture
+## 2. Theory: how Xolaris works (in depth)
+
+This section is the product model. Diagrams and runtime are in §3. Commands are in §6 onward. Architecture contracts live in [docs/architecture/](docs/architecture/README.md).
+
+### 2.1 The problem it is built to solve
+
+Security teams already have scanners (Nuclei, Trivy, Prowler, cloud CSPM, IaC checkers). Those tools dump **vendor JSON**: different field names, different severity scales, duplicates across tools, no company-wide “what do we do next?”, and no safe path from “we saw a CVE” to “we changed production.”
+
+If you feed raw Nuclei JSON into an LLM and let it SSH to a server, you get:
+
+- Hallucinated CVEs and unofficial “just run this command” fixes  
+- No proof the finding was real (no evidence hash, no tenant boundary)  
+- No distinction between “we are confident this is true” and “this would hurt the business”  
+- Accidental patches on the wrong customer’s asset  
+
+Xolaris is a **control plane**: scanners remain plug-ins; **truth, risk, permission, and change** are owned by Xolaris objects and engines. The LLM (RavenX) **explains and assists**. It does not become the system of record.
+
+### 2.2 Assembly line (one station, one job)
+
+Think of a factory, not a monolith. A finding is a unit of work that moves down a line. Each station **must not** do the next station’s job.
+
+| Station | Question it answers | Must not do |
+|---------|---------------------|-------------|
+| Adapter | Did this tool run, and what did it print? | Invent a finding schema |
+| Normalization | What is this in **our** language? | Score risk or call the LLM |
+| Evidence | Have we stored proof, and is it a duplicate? | Decide to patch |
+| Assets | What machine/app does this belong to? | Run scanners |
+| Trust | How much should we **believe** this finding? | Say how urgent the business impact is |
+| Risk | If it is real, how bad is it **for this company**? | Write a runbook |
+| Decision | **Remediate, mitigate, escalate, monitor, or ignore?** | Execute SSH/cloud APIs |
+| Planner | What **steps and rollback** would that take? | Touch infrastructure |
+| Simulation | If we did those steps, what would break? | Apply the change |
+| Approval | Has a human/org **authorized** execution? | Run the change |
+| Execution | Carry out approved steps (or record them) | Re-score risk or rewrite the plan |
+| Verification | Did the finding actually go away? | Invent a new plan |
+| Reporting | What should leadership see? | Mutate upstream engines |
+
+If you put Nuclei JSON inside the planner, or let chat skip Approval, the line is broken. New tools **plug in at the adapter station only**.
+
+### 2.3 Canonical objects vs raw scanner JSON
+
+**Canonical** means one internal shape the rest of the platform understands: `SecurityFindingObject`, `EvidenceObject`, `DecisionObject`, plan/simulation/approval/verification types in `backend/models/`.
+
+Nuclei might say `info.severity` + `matched-at`. Trivy might say `VulnerabilityID` + `PkgName`. Those strings **die at normalization**. After that, every engine sees:
+
+- `tenant_id`, `asset_id`, `finding_id`  
+- `severity` (`critical` … `informational`)  
+- `cve_ids`, `title`, `description`, `evidence[]`  
+- `status` (new, remediating, resolved, …)  
+
+**Theory:** AI prompts, reports, and remediation must consume canonical fields. If you prompt RavenX with raw scanner blobs, you re-introduce vendor drift and you cannot audit “which official finding id did we act on?”
+
+Evidence is **content-addressed proof** (hash + lineage + which tool). A finding without evidence is an allegation. Dedup uses a **fingerprint** so two Nuclei runs on the same CVE/host merge instead of creating two tickets.
+
+### 2.4 Hexagonal adapters (why scanners are not the core)
+
+The core never imports “Nuclei types.” It depends on a **port**: `BaseToolAdapter.run(context) → RawResult`.
+
+Lifecycle (template method): authenticate → validate scope → **policy ALLOW** → execute binary → parse stdout → `RawResult`.
+
+- **Hexagon:** business logic in the middle; tools on the outside. Swap Nuclei for another web scanner without touching Trust/Risk/Planner.  
+- **Policy before binary:** if the rule says DENY, the scanner process is not started (`POLICY_DENIED`).  
+- **Simulate vs live:** same stations after ingest. Simulate injects **sample payloads** so the line can be tested without Nuclei installed. Live runs the real CLI. Normalization and evidence do not care which door you used.
+
+### 2.5 Policy: fail closed
+
+`ActionClass`: READ, SUGGEST, PLAN, SIMULATE, EXECUTE_LOW, EXECUTE_HIGH.
+
+**Fail closed:** no matching rule ⇒ **DENY**. Execute-high must never silently ALLOW. Verdicts: ALLOW, DENY, ESCALATE.
+
+This is **authorization of an action**, not “is the CVE real?” A high-trust finding can still be DENY for EXECUTE_HIGH if the actor is not secops/admin. Local rules exist today; OPA is a stub (out of the 22-day plan).
+
+### 2.6 Multi-tenancy
+
+Every durable record carries `tenant_id`. Search APIs **require** it. Engine A’s Postgres row is invisible to tenant B even on the same database.
+
+**Theory:** Xolaris is built as a control plane for **many companies** (or many orgs in one company). SQLite vs Postgres is a **durability** choice; tenant_id is an **isolation** choice. Week 3 checks isolation; it does not invent tenancy — the models already have it.
+
+Chat memory today is **not** tenant-durable (RAM). That is a hole: session_id is not a tenant. Week 3 must store messages with tenant + session.
+
+### 2.7 Trust vs risk (two different scores)
+
+People collapse “confidence” and “severity.” Xolaris splits them on purpose.
+
+**Trust (0–100)** — *Is this finding true enough to act?*  
+False positives, weak evidence, unvalidated scanner noise → low trust → recommend investigate/defer even if the title says “critical.” High trust + validated evidence → “act.”
+
+**Risk (0–100)** — *If it is true, how bad is it for this enterprise?*  
+Uses trust as an **input**, plus severity/CVSS hints, asset criticality, exposure, compliance/business/technical/operational impact. Output includes **priority (P1–P5)** and **SLA** (immediate, 24h, 7d, …).
+
+A noisy Nuclei template on a lab VM: low trust, maybe medium risk.  
+A validated RCE on a public payments host: high trust, P1 risk.
+
+Decision Service consumes **both**. Planner consumes the decision, not raw CVSS alone.
+
+```text
+Scanner severity  ≠  Trust  ≠  Enterprise risk  ≠  Decision  ≠  Permission to execute
+```
+
+### 2.8 Decision Service vs Decision Engine (two different “decisions”)
+
+| Name | Package | Meaning |
+|------|---------|---------|
+| **Decision Engine** | `decision_engine/` | Chat **intent**: CHAT vs TOOL (scan) vs RAG vs AGENT |
+| **Decision Service** | `decision_service/` | **What to do about a finding**: remediate / mitigate / escalate / monitor / ignore |
+
+Mixing them is the most common onboarding mistake. `/chat` uses Decision Engine. The scan pipeline uses Decision Service (`decide()`), usually **deterministic** (`DECISION_ENABLE_AI_STACK=false`). Optional AI on decisions is a flag, not the default, because remediation choices must be **replayable and auditable**.
+
+### 2.9 From decision to change (plan → sim → approve → exec → verify)
+
+**Planner** turns “REMEDIATE” into ordered **steps**, dependencies, rollback, time/cost estimates. It does **not** SSH. It does **not** call RavenX.
+
+**Simulation** is a **dry-run of the plan**, not a second scan. It estimates blast radius, downtime, rollback feasibility, policy conflict. `safe_to_execute` is an input to humans, not a license to skip approval.
+
+**Approval** is the **organizational gate**. Output is `ExecutionAuthorization` (token: this plan, this tenant, not expired). Execution Engine **refuses** unauthorized work.
+
+**Execution** runs steps via an **infrastructure adapter**. Today that adapter **records success** without changing servers (safe for demos). Real cloud/SSH adapters are backlog: same orchestrator, different adapter.
+
+**Verification** asks: after execution, is the finding gone? New evidence, comparison, status. It is not “the LLM said it’s fine.”
+
+**Reporting** is **read-only** snapshots for dashboards and compliance. It must not write back into Trust or mutate findings as a side effect.
+
+**Why we do not auto-execute:** a control plane that patches production without simulation + approval is an exploit chain. Week 4 auto-runs **simulation** and **submits** approval (pending). A human still approves. Execution stays recording-only this month.
+
+### 2.10 Deterministic core vs RavenX (AI)
+
+| Layer | Default | Why |
+|-------|---------|-----|
+| Trust, risk, plan, sim, approval routing | **Deterministic** | Same inputs → same outputs; auditors can replay |
+| Chat `/chat` | **RavenX** via llama.cpp | Explanation, Q&A, optional “scan this URL” tool |
+| Decision Service AI | **Off** | Finding actions should not depend on temperature |
+
+RavenX is a **Qwen3-8B** security fine-tune using a **RATH** loop (Risk/Identify → Assess → Threat → Highlight/Remediate → Document → Prevent). That is a **narrative protocol** for the model’s answers. It is **not** a replacement for `TrustAssessment` or `RiskAssessment` rows in the database.
+
+If llama.cpp is down, **scans and engines still work**. If RavenX hallucinates a CVE, the **canonical finding** from Nuclei/Trivy is still the record. Never write the model’s story back as a `SecurityFindingObject` without going through adapters + normalization.
+
+### 2.11 Chat as a front door, not the product
+
+Operator paths:
+
+1. **HTTP** `POST /api/v1/scans` — machines, CI, Swagger.  
+2. **Chat** — human language; intent router may call the **same** scan orchestrator.  
+3. **Python** `AdapterFactory.create(...).run()` — tests and future agents.
+
+All three must converge on Evidence → pipeline. An agent that bypasses Approval is out of policy (see adapters guide). MCP tools later wrap **existing** facades; they do not create a second pipeline.
+
+### 2.12 Worked example (one finding)
+
+1. Operator (or chat) asks to scan `https://lab.example` with Nuclei, `mode=live`.  
+2. Policy allows SIMULATE/scan action for that tenant/role.  
+3. Nuclei returns JSONL matches. Adapter wraps stdout in `RawResult`.  
+4. Normalizer emits `SecurityFindingObject` (e.g. outdated SSH, CVE list, severity high).  
+5. Asset inventory upserts host `lab.example`. Evidence stores hashed proof; fingerprint may **merge** a duplicate.  
+6. Trust: evidence validated, scanner known → relatively high trust.  
+7. Risk: internet-facing + high severity → high enterprise risk, tight SLA.  
+8. Decision: REMEDIATE (deterministic advisor).  
+9. Planner: steps (upgrade OpenSSH, validate config, rollback to previous package).  
+10. *(Week 4)* Simulation: service restart window; `safe_to_execute` true/false + warnings.  
+11. *(Week 4)* Approval request **pending** for secops.  
+12. After human approve: Execution records steps (demo) or later applies them.  
+13. Verification: rescan or evidence that version changed.  
+14. Reporting: counts this in open-critical / MTTR metrics.
+
+Steps 10–14 exist as engines; auto-chain through 11 is the remaining glue.
+
+### 2.13 What “autonomous” means here
+
+Not “the model roots the box.” It means:
+
+- Ingest and scoring run **without a human per finding**  
+- Plans are generated **deterministically** from decisions  
+- Humans stay on the **authorization** loop for destructive work  
+- AI is used where language helps (chat, optional decision assist), not where math and policy must be stable  
+
+That is why the 22-day plan hosts RavenX **and** Postgres **and** live Nuclei, but still **does not** turn on real execution adapters.
+
+---
+
+## 3. Architecture
 
 Canonical module docs: [docs/architecture/README.md](docs/architecture/README.md).
 
-### 2.1 Control-plane pipeline
+### 3.1 Control-plane pipeline
 
 ```
 Scan/Ingest → Evidence → Trust → Risk → Decision → Plan
@@ -36,7 +218,7 @@ Scan/Ingest → Evidence → Trust → Risk → Decision → Plan
 
 Today `FindingPipelineService` (`backend/scan_ingest/services/finding_pipeline.py`) stops at **Plan**. Simulation and Approval exist as APIs but are **not auto-chained**. That chain is a week-4 task.
 
-### 2.2 Platform map
+### 3.2 Platform map
 
 ```mermaid
 flowchart TB
@@ -91,7 +273,7 @@ flowchart TB
     Chat -->|scan intent| Adapters
 ```
 
-### 2.3 Runtime (what you actually start)
+### 3.3 Runtime (what you actually start)
 
 ```mermaid
 flowchart LR
@@ -124,7 +306,7 @@ flowchart LR
 **Scan path (already coded):**  
 `POST /api/v1/scans` → resolve/create asset → adapter (`simulate` sample JSON **or** live binary) → normalize → evidence ingest → optional Trust → Risk → Decision → Plan.
 
-### 2.4 Module status (do not rebuild Done)
+### 3.4 Module status (do not rebuild Done)
 
 | # | Module | Status | Notes for the next person |
 |---|--------|--------|---------------------------|
@@ -141,7 +323,7 @@ Architecture index still says some V2 modules are “not wired”; **chat V2 is 
 
 ---
 
-## 3. Repository map
+## 4. Repository map
 
 | Path | What |
 |------|------|
@@ -163,16 +345,18 @@ Architecture index still says some V2 modules are “not wired”; **chat V2 is 
 
 ---
 
-## 4. How a request works (detail)
+## 5. How a request works (detail)
 
-### 4.1 Chat
+See **§2 Theory** for *why* these requests exist. This section is the HTTP/chat mechanics.
+
+### 5.1 Chat
 
 1. Client `POST /chat` with `{ "message": "...", "session_id": "optional" }`.  
 2. If the message looks like a scan (`scan https://…`), intent is `TOOL` and `ScanToolBuilder` runs the same scan orchestrator.  
 3. Otherwise the LLM answers using RavenX (once llama.cpp is up).  
 4. **Today** history is **in RAM** (`MemoryService`, last 20 messages). Restart wipes chat. Week 3 replaces this with Postgres.
 
-### 4.2 Scan
+### 5.2 Scan
 
 Body of `POST /api/v1/scans`:
 
@@ -194,7 +378,7 @@ Body of `POST /api/v1/scans`:
 
 `run_pipeline: true` scores trust/risk, decides, and may create a plan. It does **not** simulate or submit approval until you implement W4.2.
 
-### 4.3 Findings after scan
+### 5.3 Findings after scan
 
 Use the **same** `tenant_id`:
 
@@ -209,11 +393,11 @@ Wrong tenant → not-found envelope (`success: false`), not another tenant’s r
 
 ---
 
-## 5. Local testing (Windows laptop)
+## 6. Local testing (Windows laptop)
 
 You can prove the **control plane without GPU** using simulate mode + SQLite.
 
-### 5.1 Prerequisites
+### 6.1 Prerequisites
 
 - Python 3.11 or 3.12 on PATH (not the Microsoft Store stub).  
 - Git.  
@@ -221,7 +405,7 @@ You can prove the **control plane without GPU** using simulate mode + SQLite.
 - Optional: Node 20+ for the frontend.  
 - llama.cpp + GGUF are **optional** locally; chat will fail until `:8080` is up.
 
-### 5.2 Backend
+### 6.2 Backend
 
 ```powershell
 cd C:\Users\CIGI-USER\Downloads\Autonomous-Security\backend
@@ -235,7 +419,7 @@ Open `http://localhost:8000/docs`.
 
 Health: `GET http://localhost:8000/health` → `{ "status": "healthy" }`.
 
-### 5.3 Simulate scan (no scanner binaries)
+### 6.3 Simulate scan (no scanner binaries)
 
 ```powershell
 $tenant = "00000000-0000-4000-8000-000000000001"
@@ -252,7 +436,7 @@ Invoke-RestMethod "http://localhost:8000/api/v1/findings?tenant_id=$tenant"
 Invoke-RestMethod "http://localhost:8000/api/v1/assets?tenant_id=$tenant"
 ```
 
-### 5.4 Unit tests
+### 6.4 Unit tests
 
 ```powershell
 cd backend
@@ -261,7 +445,7 @@ python -m unittest discover -s tests -v
 python -m unittest tests.test_findings_assets_api tests.test_scan_ingest -v
 ```
 
-### 5.5 Optional local Postgres
+### 6.5 Optional local Postgres
 
 ```powershell
 cd backend
@@ -277,7 +461,7 @@ CREATE_TABLES=true
 
 Restart uvicorn. Re-run the simulate scan; data survives uvicorn restart.
 
-### 5.6 Optional local chat (if you have a GGUF + llama.cpp on Windows)
+### 6.6 Optional local chat (if you have a GGUF + llama.cpp on Windows)
 
 Set:
 
@@ -292,7 +476,7 @@ Then:
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/chat" -ContentType "application/json" -Body '{"message":"What is a CVE?"}'
 ```
 
-### 5.7 Frontend (mock only)
+### 6.7 Frontend (mock only)
 
 ```powershell
 cd frontend
@@ -304,13 +488,13 @@ npm run dev
 
 ---
 
-## 6. RavenX model download
+## 7. RavenX model download
 
 **Repo:** [https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF](https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF)
 
 This is **GGUF** for llama.cpp / Ollama / LM Studio. Architecture: **Qwen3-8B**, 128K context, Apache-2.0. Built for find → classify → fix → verify → report (RATH protocol).
 
-### 6.1 Which file to use
+### 7.1 Which file to use
 
 | File | Quant | Disk | Typical VRAM | When |
 |------|-------|------|--------------|------|
@@ -329,7 +513,7 @@ ollama run hf.co/deadbydawn101/RavenX-Sec-8B-GGUF:ravenx-sec-v4.0-128k-Q8_0
 
 The FastAPI app talks to **llama.cpp OpenAI server**, not Ollama, unless you point `LLAMA_BASE_URL` at Ollama’s OpenAI-compatible port. Prefer llama.cpp as documented below.
 
-### 6.2 Download on Linux (Vast.ai / AWS)
+### 7.2 Download on Linux (Vast.ai / AWS)
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-pip git wget
@@ -354,12 +538,12 @@ Checksum: after download, confirm size is about **4.7 GB**. Do not commit the GG
 
 ---
 
-## 7. llama.cpp (required for `/chat`)
+## 8. llama.cpp (required for `/chat`)
 
 Backend calls: `{LLAMA_BASE_URL}/v1/chat/completions`  
 Default: `http://127.0.0.1:8080`.
 
-### 7.1 Build
+### 8.1 Build
 
 ```bash
 sudo apt-get install -y build-essential cmake git
@@ -371,7 +555,7 @@ cmake --build build --config Release -j
 
 Binary is typically `build/bin/llama-server`.
 
-### 7.2 Run (NVIDIA example)
+### 8.2 Run (NVIDIA example)
 
 ```bash
 export MODEL=/opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
@@ -410,11 +594,11 @@ MODEL_NAME=RavenX
 
 ---
 
-## 8. Security tools (adapters)
+## 9. Security tools (adapters)
 
 Adapters expect the binary **on PATH** (`binary_path` defaults: `nuclei`, `trivy`, …). Install on the **same Linux VM** as FastAPI.
 
-### 8.1 This month (must)
+### 9.1 This month (must)
 
 **Nuclei** — web/network vulns.
 
@@ -453,7 +637,7 @@ Live scan examples (only on hosts you are allowed to test):
 
 Use a **lab target**. Do not scan third-party production without authorization.
 
-### 8.2 If time remains in week 2
+### 9.2 If time remains in week 2
 
 | Tool | Typical install | Use |
 |------|-----------------|-----|
@@ -463,13 +647,13 @@ Use a **lab target**. Do not scan third-party production without authorization.
 
 Code adapters already exist under `backend/src/adapters/`.
 
-### 8.3 Not this month
+### 9.3 Not this month
 
 Gitleaks, ZAP, OSV, Semgrep — backlog 4.8.
 
 ---
 
-## 9. Environment variables
+## 10. Environment variables
 
 Create `backend/.env` on the VM (chmod 600).
 
@@ -495,11 +679,11 @@ Demo tenant UUID is stable in config: `00000000-0000-4000-8000-000000000001`.
 
 ---
 
-## 10. Deployment — Vast.ai (preferred for this month)
+## 11. Deployment — Vast.ai (preferred for this month)
 
 Cheapest path for a GPU + Linux. Week 1 of the LOE.
 
-### 10.1 Rent the instance
+### 11.1 Rent the instance
 
 1. Create account at [vast.ai](https://vast.ai).  
 2. Filter: **Ubuntu 22.04**, NVIDIA GPU with **≥ 12 GB VRAM** (24 GB is safer), ≥ 40 GB disk, CUDA.  
@@ -507,7 +691,7 @@ Cheapest path for a GPU + Linux. Week 1 of the LOE.
 4. Note **SSH** host/port/user from the instance page.  
 5. Cost: leave on only while demos run (~USD 0.3–1.5/hr typical).
 
-### 10.2 First SSH
+### 11.2 First SSH
 
 ```bash
 ssh -p <PORT> root@<HOST>
@@ -515,15 +699,15 @@ nvidia-smi
 df -h
 ```
 
-### 10.3 Install stack (order)
+### 11.3 Install stack (order)
 
 1. System packages: `git`, `python3.12-venv`, `python3-pip`, `docker.io`, `docker-compose-plugin`, `build-essential`, `cmake`.  
-2. Download GGUF (section 6).  
-3. Build llama.cpp with CUDA (section 7); start `llama-server` in `tmux`.  
+2. Download GGUF (section 7).  
+3. Build llama.cpp with CUDA (section 8); start `llama-server` in `tmux`.  
 4. Clone this repo (`git clone` `dev` branch).  
 5. `cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.  
 6. `docker compose up -d` for Postgres; set `DATABASE_URL` in `.env`.  
-7. Install Nuclei + Trivy (section 8).  
+7. Install Nuclei + Trivy (section 9).  
 8. `uvicorn app:app --host 0.0.0.0 --port 8000`.  
 9. **Do not** leave 8000 open to the world until API keys (week 4). Use SSH tunnel:
 
@@ -533,7 +717,7 @@ ssh -p <PORT> -L 8000:127.0.0.1:8000 -L 8080:127.0.0.1:8080 root@<HOST>
 
 Then on your laptop: `http://localhost:8000/docs`.
 
-### 10.4 Firewall
+### 11.4 Firewall
 
 - llama.cpp: **localhost only**.  
 - FastAPI: tunnel until keys exist; later bind 8000 behind a reverse proxy.  
@@ -543,11 +727,11 @@ Change compose if needed: remove host `ports` and use a Docker network only.
 
 ---
 
-## 11. Deployment — AWS (alternative)
+## 12. Deployment — AWS (alternative)
 
 Use AWS if the company requires it. **More expensive** than Vast.ai for GPU.
 
-### 11.1 Suggested layout
+### 12.1 Suggested layout
 
 | Piece | AWS service | Notes |
 |-------|-------------|--------|
@@ -558,20 +742,20 @@ Use AWS if the company requires it. **More expensive** than Vast.ai for GPU.
 | SSH | SSM Session Manager or key pair | Prefer SSM |
 | HTTPS | ALB + ACM (week 4+; **out of this month** except a self-signed nginx if demanded) |
 
-### 11.2 EC2 steps (same software as Vast)
+### 12.2 EC2 steps (same software as Vast)
 
 1. Ubuntu 22.04 AMI, GPU instance, IAM role if using SSM.  
 2. Security group: **22 (or SSM only)** from your IP; **no 8080/5432**. 8000 only after API keys, from office IP or ALB.  
-3. Repeat sections 6–8 and 10.3.  
+3. Repeat sections 7–9 and 11.3.  
 4. Elastic IP if the instance must keep an address.
 
-### 11.3 Do not do this month
+### 12.3 Do not do this month
 
 EKS, Lambda, SageMaker endpoints, Bedrock. The app is FastAPI + llama.cpp on one box.
 
 ---
 
-## 12. HTTP catalog (already mounted)
+## 13. HTTP catalog (already mounted)
 
 Prefix `/api/v1` unless noted.
 
@@ -601,7 +785,7 @@ Swagger: `http://localhost:8000/docs`.
 
 ---
 
-## 13. Next tasks — how to implement (Feature 4.7)
+## 14. Next tasks — how to implement (Feature 4.7)
 
 Follow the LOE weeks. Implementation notes are **where to change code**, not a rewrite.
 
@@ -610,8 +794,8 @@ Follow the LOE weeks. Implementation notes are **where to change code**, not a r
 | ID | Task | How |
 |----|------|-----|
 | W1.1 | GPU VM | Vast.ai first; AWS only if mandated. SSH, `nvidia-smi`. |
-| W1.2 | RavenX | Section 6. Q4_K_M. Confirm ~4.7 GB. |
-| W1.3 | llama.cpp | Section 7. systemd or tmux. Curl `/v1/models`. |
+| W1.2 | RavenX | Section 7. Q4_K_M. Confirm ~4.7 GB. |
+| W1.3 | llama.cpp | Section 8. systemd or tmux. Curl `/v1/models`. |
 | W1.4 | Backend | Clone `dev`, venv, `requirements.txt`, `.env`, `uvicorn`. **Exit:** `POST /chat` returns RavenX text. |
 
 No application code required if `.env` is correct.
@@ -620,7 +804,7 @@ No application code required if `.env` is correct.
 
 | ID | Task | How |
 |----|------|-----|
-| W2.1 | Nuclei + Trivy | Section 8. `which nuclei trivy`. |
+| W2.1 | Nuclei + Trivy | Section 9. `which nuclei trivy`. |
 | W2.2 | Smoke | `mode: live` on a **lab** target; then `GET /findings`. Chat: `scan https://lab…`. |
 | W2.3 | Postgres | `docker compose up -d` in `backend/`. Set `DATABASE_URL`. `CREATE_TABLES=true`. **No Alembic this month.** Restart API; scan again; restart API; findings still listed. |
 
@@ -699,7 +883,7 @@ File: `frontend/src/pages/FindingsPage.tsx` (and types).
 
 ---
 
-## 14. Out of this month (do not start)
+## 15. Out of this month (do not start)
 
 Alembic · JWT/OIDC · full React · async `GET /scans/{id}` · CISA KEV/NVD live feeds · OPA · OpenAI/Anthropic · RAG · real SSH/cloud execute · Gitleaks/ZAP/OSV/Semgrep · MCP tools · production nginx/TLS platform logging.
 
@@ -707,7 +891,7 @@ If asked to “just add RAG” during 4.7, refuse and point here.
 
 ---
 
-## 15. Demo script (10 minutes)
+## 16. Demo script (10 minutes)
 
 1. `GET /health`.  
 2. `POST /chat` — “Explain why OpenSSH 7.4 is risky” (RavenX RATH-style answer).  
@@ -720,7 +904,7 @@ If asked to “just add RAG” during 4.7, refuse and point here.
 
 ---
 
-## 16. Risks
+## 17. Risks
 
 | Risk | Mitigation |
 |------|------------|
@@ -733,7 +917,7 @@ If asked to “just add RAG” during 4.7, refuse and point here.
 
 ---
 
-## 17. Related docs
+## 18. Related docs
 
 | Doc | Use |
 |-----|-----|
