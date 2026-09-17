@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Xolaris LOE — 1-Month Go-Live</title>
+  <style>
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a1a; margin: 24px 32px; }
+    h1 { font-size: 20pt; margin: 0 0 8px; }
+    h2 { font-size: 14pt; margin: 20px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    h3 { font-size: 12pt; margin: 14px 0 6px; }
+    p { margin: 6px 0; line-height: 1.35; }
+    .meta { color: #555; font-size: 10pt; }
+    .kpis { width: 100%; border-collapse: collapse; margin: 12px 0 16px; }
+    .kpis td { border: 1px solid #ccc; padding: 10px 12px; width: 25%; text-align: center; }
+    .kpis .v { font-size: 18pt; font-weight: bold; }
+    .kpis .l { font-size: 9pt; color: #555; }
+    .callout { border: 1px solid #c9a227; background: #fff8e1; padding: 10px 12px; margin: 12px 0; }
+    .info { border: 1px solid #7aa2c4; background: #eef6fb; padding: 10px 12px; margin: 12px 0; }
+    .defer { border: 1px solid #bbb; background: #f4f4f4; padding: 10px 12px; margin: 12px 0; }
+    table.data { width: 100%; border-collapse: collapse; font-size: 10pt; margin: 8px 0 16px; }
+    table.data th, table.data td { border: 1px solid #bbb; padding: 5px 7px; vertical-align: top; text-align: left; }
+    table.data th { background: #2f3e4e; color: #fff; }
+    table.data tr:nth-child(even) { background: #f6f7f8; }
+    .small { font-size: 9.5pt; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Xolaris LOE — 1-Month Go-Live Plan</h1>
+  <p class="meta">Autonomous Security (Xolaris) · 11 September 2026 · 1 engineer · 22 working days (4 weeks)<br />
+  Engines from the last 3 months stay as-is. This plan only covers hosting, database, and a thin live demo.<br />
+  Hours are engineering time. GPU rent and Hugging Face download wait are extra.</p>
+
+  <table class="kpis">
+    <tr>
+      <td><div class="v">22d</div><div class="l">This month (working days)</div></td>
+      <td><div class="v">132h</div><div class="l">Engineering hours (6h/day)</div></td>
+      <td><div class="v">4 wk</div><div class="l">Calendar</div></td>
+      <td><div class="v">Out</div><div class="l">Wave D / nice-to-have</div></td>
+    </tr>
+  </table>
+
+  <div class="callout">
+    <strong>Why this is 22 days, not 83.</strong>
+    The 83-day number was the full leftover backlog (RAG, real execute, extra scanners, OPA, full UI, Alembic, JWT).
+    That work is <em>not</em> in this month. This plan ships a hosted demo: RavenX chat + live Nuclei/Trivy scan + findings stored in Postgres + a locked API.
+    Engines are already written. We host them, we do not rebuild them.
+  </div>
+
+  <h2>1. What “done in 1 month” means</h2>
+  <p>At the end of week 4 a reviewer can:</p>
+  <ol>
+    <li>Open chat and get an answer from RavenX on the cloud VM (llama.cpp).</li>
+    <li>Run a live Nuclei or Trivy scan (not simulate-only).</li>
+    <li>See those findings and assets on GET /api/v1/findings and GET /api/v1/assets after a restart (Postgres, not SQLite).</li>
+    <li>Call the API with a key (not an open internet API).</li>
+    <li>After a plan is created, simulation runs and an approval request is submitted (no real patch on the server).</li>
+  </ol>
+
+  <h2>2. Four-week calendar</h2>
+  <table class="data">
+    <tr><th>Week</th><th>Days</th><th>Hours</th><th>Work</th><th>Exit check</th></tr>
+    <tr>
+      <td>1 — Host</td><td>5</td><td>30</td>
+      <td>Rent Vast.ai (or RunPod) Linux GPU VM. Download RavenX from Hugging Face. Build llama.cpp on port 8080. Clone backend, pip install, .env, uvicorn.</td>
+      <td>/chat returns a RavenX answer</td>
+    </tr>
+    <tr>
+      <td>2 — Scanners + DB</td><td>5</td><td>30</td>
+      <td>Install Nuclei and Trivy (Prowler/Checkov/Grype only if time). Live scan smoke. Start Postgres 16 from docker-compose. Point DATABASE_URL. Confirm scan writes findings.</td>
+      <td>Live scan + GET /findings after restart</td>
+    </tr>
+    <tr>
+      <td>3 — Persist + test</td><td>6</td><td>36</td>
+      <td>Tenant isolation check. Save chat history in Postgres (replace in-memory MemoryService). E2E happy path: scan → findings → trust → risk → decision → plan.</td>
+      <td>Restart does not wipe findings or chat</td>
+    </tr>
+    <tr>
+      <td>4 — Demo lock</td><td>6</td><td>36</td>
+      <td>Simple API keys. Auto-run simulation and submit approval after a plan. Thin findings list in the existing React app (one page, real API). Rehearse a 10-minute demo.</td>
+      <td>Keyed API + demo script works</td>
+    </tr>
+    <tr><td colspan="2"><strong>Total</strong></td><td><strong>22</strong></td><td><strong>132 hours</strong></td><td>Hosted go-live demo</td></tr>
+  </table>
+
+  <h2>3. Day-by-day LOE (22 days)</h2>
+  <table class="data">
+    <tr><th>ID</th><th>Item</th><th>Days</th><th>Hours</th><th>Cut from the 83-day plan</th></tr>
+    <tr><td>W1.1</td><td>Cheap GPU Linux VM (Vast.ai first)</td><td>1.5</td><td>9</td><td>Was 2d</td></tr>
+    <tr><td>W1.2</td><td>Download RavenX from Hugging Face</td><td>0.5</td><td>3</td><td>Was 1d; download runs in parallel with VM setup</td></tr>
+    <tr><td>W1.3</td><td>Build llama.cpp and serve on :8080</td><td>1.5</td><td>9</td><td>Was 2d</td></tr>
+    <tr><td>W1.4</td><td>Backend clone, venv, requirements, .env, uvicorn</td><td>1.5</td><td>9</td><td>Was 1d; includes env wiring to llama.cpp</td></tr>
+    <tr><td>W2.1</td><td>Install Nuclei + Trivy on Linux (live PATH)</td><td>2</td><td>12</td><td>Was 3d; Prowler/Checkov/Grype deferred if time is short</td></tr>
+    <tr><td>W2.2</td><td>Smoke: live scan + chat + GET /findings</td><td>1</td><td>6</td><td>Same intent, tighter</td></tr>
+    <tr><td>W2.3</td><td>PostgreSQL (existing docker-compose) + DATABASE_URL</td><td>2</td><td>12</td><td>Was 3d; no Alembic this month (CREATE_TABLES)</td></tr>
+    <tr><td>W3.1</td><td>Multi-tenant check (tenant_id isolation + backup dump)</td><td>1.5</td><td>9</td><td>Was 3d; indexes/pool hardening later</td></tr>
+    <tr><td>W3.2</td><td>Persistent chat memory in Postgres</td><td>2</td><td>12</td><td>Was 3d</td></tr>
+    <tr><td>W3.3</td><td>E2E happy path only (scan through plan)</td><td>2.5</td><td>15</td><td>Was 5d; no full execute/verify/report matrix</td></tr>
+    <tr><td>W4.1</td><td>API keys (not full JWT/OIDC)</td><td>2</td><td>12</td><td>Was 5d</td></tr>
+    <tr><td>W4.2</td><td>Auto simulation + submit approval after plan</td><td>2.5</td><td>15</td><td>Was 4d; no auto-execute</td></tr>
+    <tr><td>W4.3</td><td>Findings list page on real API + demo rehearsal</td><td>1.5</td><td>9</td><td>Was 6d full UI; one screen only</td></tr>
+    <tr><td colspan="2"><strong>Total this month</strong></td><td><strong>22</strong></td><td><strong>132</strong></td><td></td></tr>
+  </table>
+
+  <h2>4. Explicitly out of this month</h2>
+  <div class="defer">
+    Do not schedule these in the 22 days. They were most of the old 83-day total.
+    <ul>
+      <li>Alembic production migrations</li>
+      <li>JWT / OIDC / SSO</li>
+      <li>Full React wiring (dashboard, pipeline, approvals UX)</li>
+      <li>Async scan jobs (GET /scans/{id})</li>
+      <li>Live threat feeds (CISA KEV, NVD) and threat-intel REST</li>
+      <li>OPA policy transport</li>
+      <li>OpenAI / Anthropic providers</li>
+      <li>RAG / vector search</li>
+      <li>Real execution (SSH/cloud patch) — keep the recording adapter</li>
+      <li>Extra scanners: Gitleaks, ZAP, OSV, Semgrep; Prowler/Checkov/Grype live if week 2 slips</li>
+      <li>MCP agent tools, nginx TLS polish, structured logging platform</li>
+    </ul>
+  </div>
+
+  <h2>5. Already built — do not rebuild</h2>
+  <p>Scan/ingest, adapters (code), normalization, local policy, evidence, assets, findings/assets GET APIs (Feature 4.6), trust, risk, decision, planner, AI harness, simulation, approval, execution orchestration, verification, reporting (Feature 4.5.4), chat V2 to llama.cpp.</p>
+  <p class="small">HTTP already mounted: POST /scans, GET /findings, GET /assets, trust, risk, decisions, plans, simulations, approvals, executions, verifications, reporting, ai-harness, /chat.</p>
+
+  <h2>6. Microsoft Planner</h2>
+  <div class="info">
+    <strong>One feature for this month:</strong> 4.7 One-Month Go-Live (22 days).<br />
+    Keep 4.5 Reporting and 4.6 Findings/Assets complete.<br />
+    Put the “out of this month” list in a later bucket (4.8 Backlog) with no dates until 4.7 is done.
+  </div>
+
+  <p class="small">Assumptions: 1 engineer, 6h/day, 5-day weeks, Vast.ai/RunPod GPU Linux, Nuclei+Trivy as the live scanners, Postgres 16, CREATE_TABLES not Alembic, API keys not SSO. If the GPU VM is delayed, week 1 slips and the month becomes chat-only on simulate scans — call that out immediately.</p>
+</body>
+</html>

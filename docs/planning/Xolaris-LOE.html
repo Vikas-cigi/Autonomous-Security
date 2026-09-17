@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Xolaris LOE — Remaining Work after 3 Months</title>
+  <style>
+    body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1a1a; margin: 24px 32px; }
+    h1 { font-size: 22pt; margin: 0 0 8px; }
+    h2 { font-size: 14pt; margin: 22px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    h3 { font-size: 12pt; margin: 16px 0 6px; }
+    p { margin: 6px 0; line-height: 1.35; }
+    .meta { color: #555; font-size: 10pt; }
+    .kpis { width: 100%; border-collapse: collapse; margin: 12px 0 16px; }
+    .kpis td { border: 1px solid #ccc; padding: 10px 12px; width: 25%; text-align: center; }
+    .kpis .v { font-size: 18pt; font-weight: bold; }
+    .kpis .l { font-size: 9pt; color: #555; }
+    .callout { border: 1px solid #c9a227; background: #fff8e1; padding: 10px 12px; margin: 12px 0; }
+    .info { border: 1px solid #7aa2c4; background: #eef6fb; padding: 10px 12px; margin: 12px 0; }
+    table.data { width: 100%; border-collapse: collapse; font-size: 10pt; margin: 8px 0 16px; }
+    table.data th, table.data td { border: 1px solid #bbb; padding: 5px 7px; vertical-align: top; text-align: left; }
+    table.data th { background: #2f3e4e; color: #fff; }
+    table.data tr:nth-child(even) { background: #f6f7f8; }
+    .done { color: #1b7a3a; font-weight: 600; }
+    .partial { color: #a15c00; font-weight: 600; }
+    .wave { page-break-inside: avoid; margin: 10px 0 14px; }
+    .small { font-size: 9.5pt; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Xolaris LOE — Remaining Work after 3 Months</h1>
+  <p class="meta">Autonomous Security (Xolaris) · 9 September 2026 · 1 engineer · 6 productive hours/day<br />
+  Source: docs/architecture modules 0–22, adapter guide, Feature 4.5 Reporting, Feature 4.6 Findings/Assets APIs.<br />
+  Hours are engineering time only. GPU rental and Hugging Face download wait are extra.</p>
+
+  <table class="kpis">
+    <tr>
+      <td><div class="v">3 mo</div><div class="l">Code already built</div></td>
+      <td><div class="v">15</div><div class="l">Modules done</div></td>
+      <td><div class="v">10</div><div class="l">Partial / not hosted</div></td>
+      <td><div class="v">83d</div><div class="l">Remaining person-days</div></td>
+    </tr>
+  </table>
+
+  <div class="callout">
+    <strong>What is left is mostly hosting, not new engines.</strong>
+    The control plane is written: Scan → Evidence → Trust → Risk → Decision → Plan → Simulation → Approval → Execution → Verification → Reporting.
+    What is not done is putting RavenX + llama.cpp + scanner binaries + Postgres on a Linux cloud box, then proving the full API path and locking down tenants.
+    Without that, the product only runs in simulate mode on a laptop with SQLite and in-memory chat.
+  </div>
+
+  <h2>1. Delivery mix — code vs production</h2>
+  <p>Share of platform readiness (not lines of code): ~40% production-ready.</p>
+  <ul>
+    <li>40% engines/APIs coded</li>
+    <li>25% partial (OPA, threat-intel feeds, live scanners, UI)</li>
+    <li>20% cloud / model / database / memory</li>
+    <li>15% auth, E2E tests, pipeline glue, RAG</li>
+  </ul>
+  <p>Remaining effort: <strong>83 person-days / 490 hours</strong> (~17 calendar weeks at 5 days/week, one person).</p>
+  <table class="data">
+    <tr><th>Wave</th><th>Focus</th><th>Days</th><th>Hours</th></tr>
+    <tr><td>A Host</td><td>Cloud + RavenX + llama.cpp + scanners</td><td>10</td><td>62</td></tr>
+    <tr><td>B Data</td><td>Postgres + memory + E2E</td><td>17</td><td>96</td></tr>
+    <tr><td>C Product</td><td>Pipeline + auth + UI</td><td>18</td><td>106</td></tr>
+    <tr><td>D Later</td><td>Intel, RAG, real execute</td><td>38</td><td>226</td></tr>
+    <tr><td colspan="2"><strong>Go-live minimum (A + B)</strong></td><td><strong>27</strong></td><td><strong>158</strong></td></tr>
+    <tr><td colspan="2"><strong>Total remaining</strong></td><td><strong>83</strong></td><td><strong>490</strong></td></tr>
+  </table>
+
+  <h2>2. Already built (past 3 months) — do not rebuild</h2>
+  <table class="data">
+    <tr><th>#</th><th>Feature / module</th><th>Status</th><th>What exists</th></tr>
+    <tr><td>0</td><td>Platform / FastAPI app</td><td class="done">Done</td><td>Chat, health, CORS, SQLite default</td></tr>
+    <tr><td>1</td><td>Decision Engine</td><td class="partial">Partial</td><td>Wired to chat; ScanAware router for “scan …”; default still CHAT</td></tr>
+    <tr><td>2</td><td>Context Manager</td><td class="partial">Partial</td><td>Wired to LLMService V2; RAG builder still empty</td></tr>
+    <tr><td>3</td><td>Prompt Builder</td><td class="partial">Partial</td><td>Wired; RAG/Agent templates are placeholders</td></tr>
+    <tr><td>4</td><td>Provider Factory + LlamaProvider</td><td class="partial">Partial</td><td>Llama generate works; OpenAI/Anthropic not implemented</td></tr>
+    <tr><td>5</td><td>Canonical Security Objects</td><td class="done">Done</td><td>Findings, evidence, decisions, remediations</td></tr>
+    <tr><td>6</td><td>Normalization Service</td><td class="done">Done</td><td>Nuclei, Trivy, Prowler, Checkov, Grype</td></tr>
+    <tr><td>7</td><td>Policy Engine</td><td class="partial">Partial</td><td>Local rules fail-closed; OPA transport stub</td></tr>
+    <tr><td>8</td><td>Tool adapters</td><td class="partial">Partial</td><td>Nuclei, Trivy, Prowler, Checkov, Grype code; binaries not hosted</td></tr>
+    <tr><td>9</td><td>Evidence Repository</td><td class="done">Done</td><td>Persist, dedupe, search + GET /findings (Feature 4.6)</td></tr>
+    <tr><td>10</td><td>Asset Inventory</td><td class="done">Done</td><td>Catalog + GET /assets (Feature 4.6)</td></tr>
+    <tr><td>11</td><td>Threat Intelligence</td><td class="partial">Partial</td><td>Enrichment services exist; NVD/KEV/MITRE/MISP feeds skipped</td></tr>
+    <tr><td>12</td><td>Trust Scoring</td><td class="done">Done</td><td>Deterministic + REST</td></tr>
+    <tr><td>13</td><td>Risk Engine</td><td class="done">Done</td><td>Deterministic + REST</td></tr>
+    <tr><td>14</td><td>Decision Service</td><td class="done">Done</td><td>Deterministic advisor; AI optional flag off</td></tr>
+    <tr><td>15</td><td>Remediation Planner</td><td class="done">Done</td><td>Plans + REST</td></tr>
+    <tr><td>16</td><td>AI Harness</td><td class="done">Done</td><td>Governance wrapper + REST</td></tr>
+    <tr><td>17</td><td>Simulation Engine</td><td class="done">Done</td><td>Dry-run + REST; not auto-chained after plan</td></tr>
+    <tr><td>18</td><td>Approval Engine</td><td class="done">Done</td><td>REST; not auto-submitted after simulation</td></tr>
+    <tr><td>19</td><td>Execution Engine</td><td class="partial">Partial</td><td>Orchestration done; adapter records success, no real infra</td></tr>
+    <tr><td>20</td><td>Verification Engine</td><td class="done">Done</td><td>Post-remediation checks + REST</td></tr>
+    <tr><td>21</td><td>Reporting &amp; Analytics</td><td class="done">Done</td><td>Feature 4.5.4 validation/stabilization</td></tr>
+    <tr><td>22</td><td>Scan / Ingest</td><td class="partial">Partial</td><td>API + simulate path; live needs scanner binaries on Linux</td></tr>
+    <tr><td>4.6</td><td>Findings &amp; Assets HTTP</td><td class="done">Done</td><td>Search/get/history; shared store with scan</td></tr>
+    <tr><td>UI</td><td>React prototype</td><td class="partial">Partial</td><td>Screens exist; still mock data, not calling FastAPI</td></tr>
+  </table>
+
+  <h2>3. HTTP already mounted</h2>
+  <p>POST /api/v1/scans · GET /api/v1/findings · GET /api/v1/assets · trust · risk · decisions · remediation-plans · simulations · approvals · executions · verifications · reporting · ai-harness · /chat</p>
+  <p class="small">Missing HTTP: threat-intel list/get, authenticated user, scan job status, persisted chat sessions.</p>
+
+  <h2>4. Remaining LOE by work item</h2>
+  <table class="data">
+    <tr><th>ID</th><th>Work item</th><th>Days</th><th>Hours</th><th>Why it is still open</th></tr>
+    <tr><td>A1</td><td>Cheap GPU Linux cloud (Vast.ai / RunPod / Lambda)</td><td>2</td><td>12</td><td>Need a Linux box with GPU/RAM to host RavenX. Vast.ai is usually cheapest for hourly GPU.</td></tr>
+    <tr><td>A2</td><td>Download RavenX from Hugging Face</td><td>1</td><td>6</td><td>Get the GGUF/weights onto the VM disk. Time is mostly download + checksum.</td></tr>
+    <tr><td>A3</td><td>Build and configure llama.cpp server</td><td>2</td><td>12</td><td>Compile llama.cpp, serve OpenAI-compatible /v1/chat/completions on port 8080. Backend already calls LLAMA_BASE_URL.</td></tr>
+    <tr><td>A4</td><td>Deploy backend + pip install requirements</td><td>1</td><td>8</td><td>Clone repo, Python venv, requirements.txt, .env (LLAMA_BASE_URL, DATABASE_URL), uvicorn.</td></tr>
+    <tr><td>A5</td><td>Install live scanners on Linux</td><td>3</td><td>18</td><td>Nuclei, Trivy, Prowler, Checkov, Grype binaries + PATH. Today scans only work in simulate mode without these.</td></tr>
+    <tr><td>A6</td><td>Smoke: live scan + chat to RavenX</td><td>1</td><td>6</td><td>POST /scans mode=live, /chat against llama.cpp, confirm findings appear on GET /findings.</td></tr>
+    <tr><td>B1</td><td>PostgreSQL instead of SQLite</td><td>3</td><td>18</td><td>docker-compose.yml already has Postgres 16. Point DATABASE_URL, create DB, CREATE_TABLES or migrations.</td></tr>
+    <tr><td>B2</td><td>Alembic migrations (production schema)</td><td>3</td><td>16</td><td>CREATE_TABLES is fine for demo; production needs versioned migrations across all engine tables.</td></tr>
+    <tr><td>B3</td><td>Multi-tenant persistent storage hardening</td><td>3</td><td>16</td><td>Engines already require tenant_id. Left: backups, indexes, connection pool, no SQLite file, isolate tenants in ops.</td></tr>
+    <tr><td>B4</td><td>Persistent chat memory</td><td>3</td><td>16</td><td>MemoryService is in-RAM (max 20 messages). Restart wipes chat. Store sessions in Postgres per tenant.</td></tr>
+    <tr><td>B5</td><td>End-to-end API testing</td><td>5</td><td>30</td><td>Full path: scan → findings → trust → risk → decision → plan → simulate → approve → execute → verify → report. Unit tests exist per engine; live E2E does not.</td></tr>
+    <tr><td>C1</td><td>Auto-chain pipeline after Plan</td><td>4</td><td>24</td><td>FindingPipeline stops at Planner. Simulation, Approval, Execution, Verification exist but must be called separately.</td></tr>
+    <tr><td>C2</td><td>API authentication (JWT or API keys)</td><td>5</td><td>30</td><td>Every route is open. Needed before any cloud demo on a public IP.</td></tr>
+    <tr><td>C3</td><td>Wire React UI to real APIs</td><td>6</td><td>36</td><td>Frontend is mock. Replace with GET /findings, /assets, trust, risk, plans, approvals, /chat.</td></tr>
+    <tr><td>C4</td><td>Async scan jobs + GET /scans/{id}</td><td>3</td><td>16</td><td>Live Nuclei/Trivy can run minutes. Today the HTTP call waits until the scan finishes.</td></tr>
+    <tr><td>D1</td><td>Threat intel REST + one live feed (CISA KEV)</td><td>5</td><td>30</td><td>Module is placeholder feeds only. No GET /threat-intel. KEV is the smallest real connector.</td></tr>
+    <tr><td>D2</td><td>OPA policy transport</td><td>3</td><td>16</td><td>Local policy works. OPA backend is fail-closed stub.</td></tr>
+    <tr><td>D3</td><td>OpenAI / Anthropic providers</td><td>2</td><td>12</td><td>Placeholders. Only Llama/RavenX path works.</td></tr>
+    <tr><td>D4</td><td>RAG / document grounding</td><td>8</td><td>48</td><td>RAGBuilder returns no documents. Needed for “ask about our findings” with real evidence.</td></tr>
+    <tr><td>D5</td><td>Real execution adapters (cloud/SSH)</td><td>8</td><td>48</td><td>Execution engine records fake success. Production needs provider adapters without changing orchestration.</td></tr>
+    <tr><td>D6</td><td>Extra scanners (Gitleaks, ZAP, OSV, Semgrep)</td><td>6</td><td>36</td><td>Adapter guide lists these as next tools. Pattern already exists (~1 day each).</td></tr>
+    <tr><td>D7</td><td>MCP agent tools + logging/HTTPS</td><td>6</td><td>36</td><td>Docs list get_finding, decide, approve as next MCP tools. Also nginx TLS and structured logs.</td></tr>
+  </table>
+
+  <h2>5. Wave summaries</h2>
+  <div class="wave">
+    <h3>Wave A — go-live host (must) · 10 days · 62 hours</h3>
+    <p>Buy a cheap Linux GPU VM (Vast.ai first, then RunPod if GPUs are scarce). Download RavenX from Hugging Face. Build llama.cpp and serve it on 127.0.0.1:8080. Clone backend, pip install, set LLAMA_BASE_URL and DATABASE_URL. Install Nuclei, Trivy, Prowler, Checkov, Grype. Run one live scan and one chat. Plus GPU rent (~USD 200–500/month if left on).</p>
+  </div>
+  <div class="wave">
+    <h3>Wave B — data that survives restart (must) · 17 days · 96 hours</h3>
+    <p>Switch SQLite to PostgreSQL (compose file already in backend/docker-compose.yml). Add migrations. Confirm tenant_id isolation on findings/assets/trust/risk. Replace in-memory MemoryService with Postgres chat history. Run end-to-end API tests through the whole pipeline.</p>
+  </div>
+  <div class="wave">
+    <h3>Wave C — product (should, after host is up) · 18 days · 106 hours</h3>
+    <p>Auto-run Simulation and submit Approval after a plan. Add login or API keys before the VM is public. Point the React screens at real findings/assets/chat. Make live scans async so Nuclei does not block HTTP.</p>
+  </div>
+  <div class="wave">
+    <h3>Wave D — later (do not start before A+B) · 38 days · 226 hours</h3>
+    <p>Live KEV/NVD threat feeds, OPA, OpenAI/Anthropic fallback, RAG over findings, real patch/SSH execution (today it only records success), extra scanners (Gitleaks, ZAP, OSV), MCP tools, HTTPS and logging.</p>
+  </div>
+
+  <h2>6. Suggested calendar (one engineer)</h2>
+  <table class="data">
+    <tr><th>Block</th><th>When</th><th>Days</th><th>Outcome</th></tr>
+    <tr><td>A Host</td><td>Weeks 1–3</td><td>10</td><td>RavenX answering chat; live Nuclei/Trivy scan writing findings</td></tr>
+    <tr><td>B Data</td><td>Weeks 3–6</td><td>17</td><td>Postgres + tenant storage + chat memory + E2E test pack</td></tr>
+    <tr><td>C Product</td><td>Weeks 6–10</td><td>18</td><td>Pipeline past Plan; auth; UI on real APIs</td></tr>
+    <tr><td>D Later</td><td>Weeks 10–16</td><td>38</td><td>Live intel, RAG, real execute, extra tools</td></tr>
+  </table>
+
+  <div class="info">
+    <strong>Planner mapping.</strong>
+    Keep Feature 4.5 Reporting and 4.6 Findings/Assets as complete. Next feature bucket should be 4.7 Cloud Hosting (Wave A) then 4.8 Data Plane (Wave B). Do not open Wave D stories until A and B are done — the engines are already written.
+  </div>
+
+  <p class="small">Assumptions: 1 engineer; 6h/day; Vast.ai/RunPod GPU Linux; RavenX GGUF served by llama.cpp; scanners installed as OS packages; Postgres 16; no parallel team. Cloud invoice is extra (GPU hourly). Dates are relative to the start of Wave A, not to the 3 months already spent.</p>
+</body>
+</html>
