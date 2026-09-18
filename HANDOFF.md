@@ -5,7 +5,8 @@
 **Repo:** `https://github.com/Vikas-cigi/Autonomous-Security` · branch `dev`.  
 **Do not rebuild engines.** Host them, persist data, prove a live demo.
 
-**Read first:** [§2 Theory](#2-theory-how-xolaris-works-in-depth) — why the line exists, trust vs risk, why RavenX is not the system of record.
+**Read first:** [§2 Theory](#2-theory-how-xolaris-works-in-depth) — why the line exists, trust vs risk, why RavenX is not the system of record.  
+**Local RavenX on this laptop:** [§7](#7-ravenx-model-download--hugging-face) then [§8](#8-llamacpp--install-and-run-including-windows).
 
 ---
 
@@ -403,7 +404,7 @@ You can prove the **control plane without GPU** using simulate mode + SQLite.
 - Git.  
 - Optional: Docker Desktop if you want Postgres locally.  
 - Optional: Node 20+ for the frontend.  
-- llama.cpp + GGUF are **optional** locally; chat will fail until `:8080` is up.
+- llama.cpp + GGUF are **required for `/chat`**. Follow §7 then §8. Scans still work without them.
 
 ### 6.2 Backend
 
@@ -461,20 +462,17 @@ CREATE_TABLES=true
 
 Restart uvicorn. Re-run the simulate scan; data survives uvicorn restart.
 
-### 6.6 Optional local chat (if you have a GGUF + llama.cpp on Windows)
+### 6.6 Local chat (RavenX)
 
-Set:
+You need **two processes**: llama.cpp on `:8080` (the model) and FastAPI on `:8000` (Xolaris).
 
-```
-LLAMA_BASE_URL=http://127.0.0.1:8080
-MODEL_NAME=RavenX
-```
+| Step | Section |
+|------|---------|
+| 1. Download the GGUF from Hugging Face | **§7.3** (Windows) or §7.4 (Linux) |
+| 2. Install llama.cpp and start `llama-server` | **§8.1** (Windows) or §8.4 (Linux) |
+| 3. Point FastAPI at it and call `/chat` | **§8.3** |
 
-Then:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8000/chat" -ContentType "application/json" -Body '{"message":"What is a CVE?"}'
-```
+Until `:8080` is up, `POST /chat` fails. Scan APIs still work.
 
 ### 6.7 Frontend (mock only)
 
@@ -488,39 +486,132 @@ npm run dev
 
 ---
 
-## 7. RavenX model download
+## 7. RavenX model download (Hugging Face)
 
-**Repo:** [https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF](https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF)
+Xolaris does **not** download the model for you. FastAPI only **HTTP-calls** a local llama.cpp server. You put a **GGUF file on disk**, start llama.cpp pointing at that file, then set `LLAMA_BASE_URL`.
 
-This is **GGUF** for llama.cpp / Ollama / LM Studio. Architecture: **Qwen3-8B**, 128K context, Apache-2.0. Built for find → classify → fix → verify → report (RATH protocol).
-
-### 7.1 Which file to use
-
-| File | Quant | Disk | Typical VRAM | When |
-|------|-------|------|--------------|------|
-| **`ravenx-sec-v4.0-128k-Q4_K_M.gguf`** | Q4_K_M | **4.7 GB** | ~6–8 GB | **Default for Vast.ai** |
-| `ravenx-sec-v4.0-128k-Q5_K_M.gguf` | Q5_K_M | 5.4 GB | ~8–10 GB | If VRAM ≥ 12 GB |
-| `ravenx-sec-v4.0-128k-Q8_0.gguf` | Q8_0 | 8.1 GB | ~10–12 GB | Quality over cost |
-| `ravenx-sec-v4.0-128k-f16.gguf` | F16 | 15.3 GB | ~16 GB+ | Do not use on cheap GPUs |
-
-**Recommend Q4_K_M** for the 1-month demo.
-
-Ollama shortcut (optional, not required by our backend):
-
-```bash
-ollama run hf.co/deadbydawn101/RavenX-Sec-8B-GGUF:ravenx-sec-v4.0-128k-Q8_0
+```text
+Hugging Face  →  ravenx-....gguf on disk  →  llama-server :8080  →  FastAPI POST /chat
 ```
 
-The FastAPI app talks to **llama.cpp OpenAI server**, not Ollama, unless you point `LLAMA_BASE_URL` at Ollama’s OpenAI-compatible port. Prefer llama.cpp as documented below.
+**Repo (public, Apache-2.0):** [https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF](https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF)
 
-### 7.2 Download on Linux (Vast.ai / AWS)
+| Fact | Value |
+|------|--------|
+| Architecture | Qwen3-8B |
+| Format | **GGUF** (llama.cpp). Not PyTorch `.safetensors`. |
+| Context | Up to 128K tokens in the file; we run **4K–8K** locally |
+| What it is for | Chat explanation (RATH narrative). Not the findings database. |
+| Git | **Never commit** the GGUF (`*.gguf` is gitignored) |
+
+### 7.1 Which file to download
+
+Pick **one** file from the Hugging Face **Files** tab. Default for this project:
+
+**`ravenx-sec-v4.0-128k-Q4_K_M.gguf`** (~4.7 GB)
+
+| File | Quant | Disk | GPU VRAM | When |
+|------|-------|------|----------|------|
+| **`ravenx-sec-v4.0-128k-Q4_K_M.gguf`** | Q4_K_M | **~4.7 GB** | ~6–8 GB | **Use this** |
+| `ravenx-sec-v4.0-128k-Q5_K_M.gguf` | Q5_K_M | ~5.4 GB | ~8–10 GB | Better quality, more RAM |
+| `ravenx-sec-v4.0-128k-Q8_0.gguf` | Q8_0 | ~8.1 GB | ~10–12 GB | Strong GPU only |
+| `ravenx-sec-v4.0-128k-f16.gguf` | F16 | ~15.3 GB | ~16 GB+ | Skip on laptops |
+
+**CPU-only laptop:** still download **Q4_K_M**. It will be **slow** (tens of seconds to minutes per reply) but proves `/chat`. Do not download F16 onto a laptop.
+
+Ollama is **not** what FastAPI expects. Skip Ollama unless you know how to point `LLAMA_BASE_URL` at Ollama’s OpenAI port.
+
+### 7.2 Hugging Face account (usually optional)
+
+The repo is **public**. You can download without a token.
+
+If the CLI says `401` / `gated` / `Please login`:
+
+1. Create a free account at [huggingface.co](https://huggingface.co).  
+2. [Settings → Access Tokens](https://huggingface.co/settings/tokens) → **Read** token.  
+3. PowerShell (current user, this session):
+
+```powershell
+$env:HF_TOKEN = "hf_xxxxxxxx"
+```
+
+Or store it once:
+
+```powershell
+python -m pip install -U "huggingface_hub[cli]"
+hf auth login
+```
+
+Paste the token when asked. Do **not** commit the token or put it in the repo.
+
+### 7.3 Download on Windows (this laptop)
+
+Use a folder **outside** the git repo so you cannot accidentally `git add` 4.7 GB.
+
+```powershell
+New-Item -ItemType Directory -Force -Path C:\models\RavenX-Sec-8B-GGUF | Out-Null
+```
+
+#### Method A — Hugging Face CLI (preferred, resumable)
+
+Needs Python on PATH (real Python, not the Microsoft Store stub). Use the backend venv if you already created it in §6.2.
+
+```powershell
+cd C:\Users\CIGI-USER\Downloads\Autonomous-Security\backend
+.\venv\Scripts\Activate.ps1
+python -m pip install -U "huggingface_hub[cli]"
+
+hf download deadbydawn101/RavenX-Sec-8B-GGUF `
+  ravenx-sec-v4.0-128k-Q4_K_M.gguf `
+  --local-dir C:\models\RavenX-Sec-8B-GGUF
+```
+
+If `hf` is not found, try `huggingface-cli download` with the same arguments, or:
+
+```powershell
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='deadbydawn101/RavenX-Sec-8B-GGUF', filename='ravenx-sec-v4.0-128k-Q4_K_M.gguf', local_dir=r'C:\models\RavenX-Sec-8B-GGUF')"
+```
+
+The download **resumes** if it dies mid-file. Re-run the same command.
+
+#### Method B — Browser
+
+1. Open [the model page](https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF).  
+2. Click **Files and versions**.  
+3. Click `ravenx-sec-v4.0-128k-Q4_K_M.gguf` → download.  
+4. Move the file to `C:\models\RavenX-Sec-8B-GGUF\`.
+
+#### Method C — `curl.exe` (resume with `-C -`)
+
+```powershell
+curl.exe -L --retry 5 -C - `
+  -o C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf `
+  "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+```
+
+Use **`curl.exe`**, not PowerShell’s `Invoke-WebRequest` (slow / memory-hungry for multi-GB files).
+
+#### Verify the file (do this)
+
+```powershell
+Get-Item C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf |
+  Select-Object FullName, Length, LastWriteTime
+```
+
+`Length` should be about **5,000,000,000 bytes** (~4.7 GiB). If you see ~1 KB or a few MB, you downloaded an HTML error page — delete it and retry (often needs `HF_TOKEN`).
+
+Expected path used in §8:
+
+`C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf`
+
+### 7.4 Download on Linux (Vast.ai / AWS)
 
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-pip git wget
 pip install -U "huggingface_hub[cli]"
 
-mkdir -p /opt/models && cd /opt/models
-huggingface-cli download deadbydawn101/RavenX-Sec-8B-GGUF \
+mkdir -p /opt/models
+hf download deadbydawn101/RavenX-Sec-8B-GGUF \
   ravenx-sec-v4.0-128k-Q4_K_M.gguf \
   --local-dir /opt/models/RavenX-Sec-8B-GGUF
 ```
@@ -529,37 +620,197 @@ Direct URL (same file):
 
 ```bash
 wget -c "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf" \
-  -O /opt/models/ravenx-sec-v4.0-128k-Q4_K_M.gguf
+  -O /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
 ```
 
-If the CLI asks for a token, create a **read** token at huggingface.co/settings/tokens (public repo usually works without it).
-
-Checksum: after download, confirm size is about **4.7 GB**. Do not commit the GGUF into git.
+Confirm size ~4.7 GB. Do not commit the GGUF.
 
 ---
 
-## 8. llama.cpp (required for `/chat`)
+## 8. llama.cpp — install and run (including Windows)
 
-Backend calls: `{LLAMA_BASE_URL}/v1/chat/completions`  
-Default: `http://127.0.0.1:8080`.
+**What llama.cpp is:** a C++ runtime that loads the GGUF and exposes an **OpenAI-compatible HTTP API**.
 
-### 8.1 Build
+**What Xolaris needs:** the **`llama-server`** binary (not `llama-cli`). FastAPI calls:
+
+`{LLAMA_BASE_URL}/v1/chat/completions`  
+Default: `http://127.0.0.1:8080`
+
+You need **two terminals** after this section:
+
+1. Terminal A: `llama-server` (stays running).  
+2. Terminal B: `uvicorn` for the backend.
+
+Do **not** bind llama.cpp to `0.0.0.0` on a public VM. `--host 127.0.0.1` only.
+
+### 8.1 Windows — install prebuilt binaries (do this locally)
+
+You do **not** need Visual Studio or CMake on Windows. Use official zips from:
+
+[https://github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases)
+
+Open the **latest** `b#####` release. Filenames look like `llama-b10793-bin-win-….zip` (the number changes every day — take the newest).
+
+#### Pick the zip for your hardware
+
+| Your PC | Download this asset |
+|---------|---------------------|
+| **NVIDIA GPU** + CUDA 12 | `llama-bXXXXX-bin-win-cuda-12.4-x64.zip` **and** `cudart-llama-bin-win-cuda-12.4-x64.zip` |
+| **NVIDIA GPU** + CUDA 13 | `llama-bXXXXX-bin-win-cuda-13.3-x64.zip` **and** `cudart-llama-bin-win-cuda-13.3-x64.zip` |
+| **AMD / Intel GPU** (or NVIDIA without CUDA toolkit) | `llama-bXXXXX-bin-win-vulkan-x64.zip` |
+| **CPU only** (no usable GPU) | `llama-bXXXXX-bin-win-cpu-x64.zip` |
+| Snapdragon / ARM laptop | `llama-bXXXXX-bin-win-cpu-arm64.zip` |
+
+How to choose NVIDIA CUDA 12 vs 13:
+
+```powershell
+nvidia-smi
+```
+
+If that command fails, you do **not** have a working NVIDIA driver — use **Vulkan** or **CPU**. If it works, CUDA 12.4 zip is the usual laptop choice; use 13.x only if your installed CUDA runtime is 13.
+
+#### Extract
+
+```powershell
+New-Item -ItemType Directory -Force -Path C:\llama.cpp | Out-Null
+# Expand the llama-bXXXXX-bin-win-….zip into C:\llama.cpp
+# If you downloaded cudart-….zip, extract those DLLs into the SAME folder
+```
+
+In File Explorer: extract the zip into `C:\llama.cpp`. You should see **`llama-server.exe`** in that folder (sometimes in a subfolder — if so, use that subfolder as `$LlamaDir` below).
+
+CUDA builds without the **cudart** zip often fail at start with `cudart64_*.dll was not found`. Extract the matching `cudart-llama-bin-win-cuda-….zip` **into the same directory** as `llama-server.exe`.
+
+#### Start the server (keep this window open)
+
+**NVIDIA (CUDA zip):**
+
+```powershell
+$LlamaDir = "C:\llama.cpp"
+$Model = "C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+
+Set-Location $LlamaDir
+.\llama-server.exe `
+  -m $Model `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 4096 `
+  -ngl 99 `
+  --alias RavenX
+```
+
+**Vulkan (AMD/Intel, or NVIDIA without CUDA zip):**
+
+Same command; if it is slow, try `-ngl 99` still (Vulkan offload). If it errors, drop to CPU (`-ngl 0`).
+
+**CPU only:**
+
+```powershell
+$LlamaDir = "C:\llama.cpp"
+$Model = "C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+
+Set-Location $LlamaDir
+.\llama-server.exe `
+  -m $Model `
+  --host 127.0.0.1 `
+  --port 8080 `
+  -c 2048 `
+  -ngl 0 `
+  --threads $env:NUMBER_OF_PROCESSORS `
+  --alias RavenX
+```
+
+| Flag | Meaning |
+|------|---------|
+| `-m` | Path to the GGUF from §7 |
+| `--port 8080` | Must match `LLAMA_BASE_URL` |
+| `-c` | Context window. 4096 is enough for demo. 2048 on CPU. Do **not** start at 128K. |
+| `-ngl 99` | Offload as many layers as possible to GPU. `0` = CPU only. |
+| `--alias RavenX` | Name FastAPI sends as `model` |
+| `--host 127.0.0.1` | Only this PC can call it |
+
+**Healthy start:** the console prints that the model loaded and it is listening on `http://127.0.0.1:8080`. Leave this window open. Ctrl+C stops the model.
+
+First load can take 30–90 seconds (reads ~5 GB from disk).
+
+### 8.2 Smoke-test llama.cpp (before FastAPI)
+
+**New PowerShell window** (leave llama-server running):
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/v1/models
+```
+
+You should see a model list that includes `RavenX` (or the filename). Then:
+
+```powershell
+$body = @{
+  model = "RavenX"
+  messages = @(@{ role = "user"; content = "Say hello in one sentence." })
+  max_tokens = 64
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8080/v1/chat/completions `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Success = JSON with `choices[0].message.content` containing a short reply.
+
+Browser check: `http://127.0.0.1:8080` opens llama.cpp’s own tiny UI. That proves the server, not Xolaris.
+
+### 8.3 Wire FastAPI (Windows local)
+
+`backend/.env` (create if missing; **never commit**):
+
+```
+LLAMA_BASE_URL=http://127.0.0.1:8080
+MODEL_NAME=RavenX
+SCAN_DEFAULT_MODE=simulate
+```
+
+Start the API **in a second terminal**:
+
+```powershell
+cd C:\Users\CIGI-USER\Downloads\Autonomous-Security\backend
+.\venv\Scripts\Activate.ps1
+uvicorn app:app --reload
+```
+
+Then:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:8000/chat `
+  -ContentType "application/json" `
+  -Body '{"message":"What is a CVE? Answer in two sentences."}'
+```
+
+Success = JSON with `data.response` containing RavenX text. If that works, local install is done.
+
+Order every time you reboot:
+
+1. Start `llama-server.exe` (terminal A) and wait until it is listening.  
+2. Start `uvicorn` (terminal B).  
+3. Call `/chat`.
+
+### 8.4 Linux — build from source (Vast.ai / AWS)
 
 ```bash
 sudo apt-get install -y build-essential cmake git
 git clone https://github.com/ggml-org/llama.cpp /opt/llama.cpp
 cd /opt/llama.cpp
-cmake -B build -DGGML_CUDA=ON   # use GGML_HIPBLAS or CPU-only if no NVIDIA
+cmake -B build -DGGML_CUDA=ON   # omit GGML_CUDA=ON for CPU-only
 cmake --build build --config Release -j
 ```
 
-Binary is typically `build/bin/llama-server`.
+Binary is typically `/opt/llama.cpp/build/bin/llama-server`.
 
-### 8.2 Run (NVIDIA example)
+### 8.5 Linux — run (NVIDIA)
 
 ```bash
 export MODEL=/opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
-# if wget'd to /opt/models/*.gguf, use that path
 
 /opt/llama.cpp/build/bin/llama-server \
   -m "$MODEL" \
@@ -570,13 +821,7 @@ export MODEL=/opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
   --alias RavenX
 ```
 
-| Flag | Meaning |
-|------|---------|
-| `-c 8192` | Context; raise later if VRAM allows (model supports 128K; 8K is enough for demo) |
-| `-ngl 99` | Offload all layers to GPU |
-| `--host 127.0.0.1` | Only FastAPI on the same VM talks to it. Do not expose 8080 to the internet. |
-
-Keep it running under `tmux` or systemd. Smoke:
+Keep it under `tmux` or systemd. Smoke:
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/models
@@ -585,14 +830,24 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"RavenX","messages":[{"role":"user","content":"Say hello"}]}'
 ```
 
-Then FastAPI `.env`:
+Then the same FastAPI `.env` as §8.3 (`LLAMA_BASE_URL=http://127.0.0.1:8080`).
 
-```
-LLAMA_BASE_URL=http://127.0.0.1:8080
-MODEL_NAME=RavenX
-```
+### 8.6 Troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---------|--------------|------------|
+| `Connection refused` on `:8080` | llama-server not running | Start §8.1; wait for “listening” |
+| `cudart64_*.dll was not found` | CUDA zip without cudart zip | Extract matching `cudart-llama-bin-win-cuda-*.zip` next to the exe |
+| `llama-server.exe` exits instantly | Wrong zip for CPU/GPU, or bad GGUF path | Check `-m` path; try CPU zip + `-ngl 0` |
+| Download is 1 KB | HTML error page, not the GGUF | Delete file; set `HF_TOKEN`; use `hf download` |
+| `/chat` times out (~300s) | CPU-only 8B is too slow, or `-c` too large | Use `-c 2048`, `-ngl 0`, wait; or use a GPU zip |
+| Out of memory / process killed | Context or GPU layers too high | `-c 2048`, reduce `-ngl` (try `20` then `40`) |
+| Port 8080 already in use | Another llama / Ollama / app | `netstat -ano \| findstr :8080` or use `--port 8081` **and** change `LLAMA_BASE_URL` |
+| Chat works in browser `:8080` but FastAPI fails | Wrong `.env` or uvicorn started before server | Confirm `.env` in `backend/`; restart uvicorn |
+| You ran `llama-cli.exe` | CLI is one-shot, no HTTP API | You need **`llama-server.exe`** |
 
 ---
+
 
 ## 9. Security tools (adapters)
 
@@ -673,7 +928,7 @@ SCAN_DEFAULT_TENANT_ID=00000000-0000-4000-8000-000000000001
 SCAN_CHAT_RUN_PIPELINE=true
 ```
 
-Local Windows without GPU: omit Postgres, keep `SCAN_DEFAULT_MODE=simulate`, no `LLAMA_BASE_URL` change until llama.cpp exists.
+Local Windows: omit Postgres, keep `SCAN_DEFAULT_MODE=simulate`, follow **§7.3 + §8.1–8.3** for chat. `LLAMA_BASE_URL` stays `http://127.0.0.1:8080`.
 
 Demo tenant UUID is stable in config: `00000000-0000-4000-8000-000000000001`.
 
@@ -702,8 +957,8 @@ df -h
 ### 11.3 Install stack (order)
 
 1. System packages: `git`, `python3.12-venv`, `python3-pip`, `docker.io`, `docker-compose-plugin`, `build-essential`, `cmake`.  
-2. Download GGUF (section 7).  
-3. Build llama.cpp with CUDA (section 8); start `llama-server` in `tmux`.  
+2. Download GGUF (§7.4).  
+3. Build llama.cpp with CUDA (§8.4–8.5); start `llama-server` in `tmux`.  
 4. Clone this repo (`git clone` `dev` branch).  
 5. `cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.  
 6. `docker compose up -d` for Postgres; set `DATABASE_URL` in `.env`.  
@@ -794,8 +1049,8 @@ Follow the LOE weeks. Implementation notes are **where to change code**, not a r
 | ID | Task | How |
 |----|------|-----|
 | W1.1 | GPU VM | Vast.ai first; AWS only if mandated. SSH, `nvidia-smi`. |
-| W1.2 | RavenX | Section 7. Q4_K_M. Confirm ~4.7 GB. |
-| W1.3 | llama.cpp | Section 8. systemd or tmux. Curl `/v1/models`. |
+| W1.2 | RavenX | §7. Windows laptop: **§7.3**. GPU VM: §7.4. Q4_K_M. Confirm ~4.7 GB. |
+| W1.3 | llama.cpp | §8. Windows: **prebuilt zip + `llama-server.exe` (§8.1–8.3)**. Linux VM: build §8.4, run §8.5. Prove `/v1/models`. |
 | W1.4 | Backend | Clone `dev`, venv, `requirements.txt`, `.env`, `uvicorn`. **Exit:** `POST /chat` returns RavenX text. |
 
 No application code required if `.env` is correct.

@@ -46,5 +46,9 @@ Thumbs.db
 *.zip
 frontend.zip
 
+# LLM weights — never commit (multi-GB GGUF)
+*.gguf
+models/
+
 # Compiled / cache
 *.pyc
