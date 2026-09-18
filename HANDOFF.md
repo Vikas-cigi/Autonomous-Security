@@ -6,7 +6,8 @@
 **Do not rebuild engines.** Host them, persist data, prove a live demo.
 
 **Read first:** [§2 Theory](#2-theory-how-xolaris-works-in-depth) — why the line exists, trust vs risk, why RavenX is not the system of record.  
-**Local RavenX on this laptop:** [§7](#7-ravenx-model-download--hugging-face) then [§8](#8-llamacpp--install-and-run-including-windows).
+**Local RavenX on this laptop:** [§7](#7-ravenx-model-download--hugging-face) then [§8](#8-llamacpp--install-and-run-including-windows).  
+**Download the GGUF from the command line:** [PowerShell §7.4](#74-windows-powershell-cli) · [CMD §7.5](#75-windows-command-prompt-cmd) · [Linux GPU VM §7.6](#76-linux-gpu-vm-vastai--aws--any-ssh-box).
 
 ---
 
@@ -468,7 +469,7 @@ You need **two processes**: llama.cpp on `:8080` (the model) and FastAPI on `:80
 
 | Step | Section |
 |------|---------|
-| 1. Download the GGUF from Hugging Face | **§7.3** (Windows) or §7.4 (Linux) |
+| 1. Download the GGUF from Hugging Face | Windows **PowerShell §7.4** or **CMD §7.5**; Linux VM **§7.6** |
 | 2. Install llama.cpp and start `llama-server` | **§8.1** (Windows) or §8.4 (Linux) |
 | 3. Point FastAPI at it and call `/chat` | **§8.3** |
 
@@ -544,9 +545,39 @@ hf auth login
 
 Paste the token when asked. Do **not** commit the token or put it in the repo.
 
-### 7.3 Download on Windows (this laptop)
+### 7.3 Pick the shell first
 
-Use a folder **outside** the git repo so you cannot accidentally `git add` 4.7 GB.
+The model is **one GGUF file**. You download it with a CLI. Pick the row that matches where you are sitting, then copy the block in that section.
+
+| Where you are | What to open | Section |
+|---------------|--------------|---------|
+| This Windows laptop | **PowerShell** (Win+X → Windows PowerShell / Terminal) | **§7.4** |
+| This Windows laptop | **Command Prompt** (`cmd.exe`) | **§7.5** |
+| Vast.ai, AWS EC2, or any Linux GPU VM | SSH, then **bash** | **§7.6** |
+| WSL2 on this laptop | Ubuntu terminal | Same commands as **§7.6**, save under `/mnt/c/models/...` if you will run llama.cpp on Windows |
+
+Put the file **outside** the git repo so you cannot `git add` 4.7 GB.
+
+| OS | Save the GGUF here |
+|----|--------------------|
+| Windows laptop | `C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf` |
+| Linux VM | `/opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf` |
+
+Direct URL (same file, all methods):
+
+`https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf`
+
+After download, jump to **§7.7** to confirm size, then **§8** to run llama.cpp.
+
+### 7.4 Windows PowerShell (CLI)
+
+Open **PowerShell**. If `Activate.ps1` is blocked, run this once in the same window:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Create the folder:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\models\RavenX-Sec-8B-GGUF | Out-Null
@@ -554,76 +585,261 @@ New-Item -ItemType Directory -Force -Path C:\models\RavenX-Sec-8B-GGUF | Out-Nul
 
 #### Method A — Hugging Face CLI (preferred, resumable)
 
-Needs Python on PATH (real Python, not the Microsoft Store stub). Use the backend venv if you already created it in §6.2.
+Needs a real Python on PATH (not the Microsoft Store stub). Use the backend venv if you already created it in §6.2.
 
 ```powershell
 cd C:\Users\CIGI-USER\Downloads\Autonomous-Security\backend
 .\venv\Scripts\Activate.ps1
 python -m pip install -U "huggingface_hub[cli]"
-
-hf download deadbydawn101/RavenX-Sec-8B-GGUF `
-  ravenx-sec-v4.0-128k-Q4_K_M.gguf `
-  --local-dir C:\models\RavenX-Sec-8B-GGUF
+hf download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir C:\models\RavenX-Sec-8B-GGUF
 ```
 
-If `hf` is not found, try `huggingface-cli download` with the same arguments, or:
+If `hf` is not found, use the older CLI name (same arguments):
+
+```powershell
+huggingface-cli download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir C:\models\RavenX-Sec-8B-GGUF
+```
+
+If neither command is on PATH, call Python directly (no `hf` binary needed):
 
 ```powershell
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='deadbydawn101/RavenX-Sec-8B-GGUF', filename='ravenx-sec-v4.0-128k-Q4_K_M.gguf', local_dir=r'C:\models\RavenX-Sec-8B-GGUF')"
 ```
 
-The download **resumes** if it dies mid-file. Re-run the same command.
+No venv yet? Use system Python:
 
-#### Method B — Browser
+```powershell
+py -m pip install -U "huggingface_hub[cli]"
+py -m huggingface_hub.cli.hf download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir C:\models\RavenX-Sec-8B-GGUF
+```
+
+The download **resumes** if it dies. Re-run the same command.
+
+If you get `401` / `gated`, set a token for this session then retry:
+
+```powershell
+$env:HF_TOKEN = "hf_xxxxxxxx"
+```
+
+#### Method B — `curl.exe` (no Python)
+
+Use **`curl.exe`**, not `Invoke-WebRequest` (IWR is slow and can eat RAM on a 4.7 GB file).
+
+```powershell
+curl.exe -L --retry 5 -C - -o C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+```
+
+`-C -` resumes a partial file. Re-run if the network drops.
+
+#### Method C — Browser (not CLI)
 
 1. Open [the model page](https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF).  
-2. Click **Files and versions**.  
-3. Click `ravenx-sec-v4.0-128k-Q4_K_M.gguf` → download.  
-4. Move the file to `C:\models\RavenX-Sec-8B-GGUF\`.
+2. **Files and versions** → `ravenx-sec-v4.0-128k-Q4_K_M.gguf` → download.  
+3. Move it to `C:\models\RavenX-Sec-8B-GGUF\`.
 
-#### Method C — `curl.exe` (resume with `-C -`)
+Then **§7.7**.
 
-```powershell
-curl.exe -L --retry 5 -C - `
-  -o C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf `
-  "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+### 7.5 Windows Command Prompt (cmd)
+
+Open **cmd**: Win+R → type `cmd` → Enter. Do **not** paste PowerShell backticks (`` ` ``) here; they are not line-continuation in cmd.
+
+Create the folder:
+
+```bat
+if not exist C:\models\RavenX-Sec-8B-GGUF mkdir C:\models\RavenX-Sec-8B-GGUF
 ```
 
-Use **`curl.exe`**, not PowerShell’s `Invoke-WebRequest` (slow / memory-hungry for multi-GB files).
+#### Method A — Hugging Face CLI (preferred)
 
-#### Verify the file (do this)
-
-```powershell
-Get-Item C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf |
-  Select-Object FullName, Length, LastWriteTime
+```bat
+cd /d C:\Users\CIGI-USER\Downloads\Autonomous-Security\backend
+venv\Scripts\activate.bat
+python -m pip install -U "huggingface_hub[cli]"
+hf download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir C:\models\RavenX-Sec-8B-GGUF
 ```
 
-`Length` should be about **5,000,000,000 bytes** (~4.7 GiB). If you see ~1 KB or a few MB, you downloaded an HTML error page — delete it and retry (often needs `HF_TOKEN`).
+If `hf` is not recognized:
 
-Expected path used in §8:
+```bat
+huggingface-cli download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir C:\models\RavenX-Sec-8B-GGUF
+```
 
-`C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf`
+If the CLI still is not on PATH:
 
-### 7.4 Download on Linux (Vast.ai / AWS)
+```bat
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='deadbydawn101/RavenX-Sec-8B-GGUF', filename='ravenx-sec-v4.0-128k-Q4_K_M.gguf', local_dir=r'C:\models\RavenX-Sec-8B-GGUF')"
+```
+
+No venv:
+
+```bat
+py -m pip install -U "huggingface_hub[cli]"
+py -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='deadbydawn101/RavenX-Sec-8B-GGUF', filename='ravenx-sec-v4.0-128k-Q4_K_M.gguf', local_dir=r'C:\models\RavenX-Sec-8B-GGUF')"
+```
+
+Token for this cmd window (only if Hugging Face returns 401):
+
+```bat
+set HF_TOKEN=hf_xxxxxxxx
+```
+
+#### Method B — `curl.exe` (no Python)
+
+```bat
+curl.exe -L --retry 5 -C - -o C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+```
+
+#### Verify in cmd
+
+```bat
+dir C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf
+```
+
+The size column should be about **4.7 GB** (around 5,000,000,000 bytes). A 1 KB file is an HTML error page — delete it and retry.
+
+Then **§7.7** / **§8.1**.
+
+### 7.6 Linux GPU VM (Vast.ai / AWS / any SSH box)
+
+Do this **on the VM**, not on the laptop. Rent the box first (§11.1), then SSH:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y python3-pip git wget
-pip install -U "huggingface_hub[cli]"
-
-mkdir -p /opt/models
-hf download deadbydawn101/RavenX-Sec-8B-GGUF \
-  ravenx-sec-v4.0-128k-Q4_K_M.gguf \
-  --local-dir /opt/models/RavenX-Sec-8B-GGUF
+ssh -p <PORT> root@<HOST>
 ```
 
-Direct URL (same file):
+On AWS, that may be `ubuntu@<HOST>` with `-i your-key.pem`.
+
+#### 0) Disk, GPU, packages
+
+You need **≥ 8 GB free** (4.7 GB file + headroom). Hugging Face is slow on a cold VM — start this on day 1.
 
 ```bash
-wget -c "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf" \
-  -O /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
+nvidia-smi
+df -h
+sudo apt-get update
+sudo apt-get install -y python3-pip python3-venv git wget curl tmux
+sudo mkdir -p /opt/models/RavenX-Sec-8B-GGUF
 ```
 
-Confirm size ~4.7 GB. Do not commit the GGUF.
+Start a **tmux** session so the download survives if SSH drops:
+
+```bash
+tmux new -s ravenx
+```
+
+If you disconnect: `tmux attach -t ravenx`. Detach without killing it: `Ctrl+B` then `D`.
+
+Optional token (only if the CLI returns 401):
+
+```bash
+export HF_TOKEN=hf_xxxxxxxx
+```
+
+#### Method A — Hugging Face CLI (preferred, resumable)
+
+```bash
+python3 -m pip install -U "huggingface_hub[cli]"
+hf download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir /opt/models/RavenX-Sec-8B-GGUF
+```
+
+If `hf` is not found:
+
+```bash
+huggingface-cli download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir /opt/models/RavenX-Sec-8B-GGUF
+```
+
+If neither binary is on PATH:
+
+```bash
+python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='deadbydawn101/RavenX-Sec-8B-GGUF', filename='ravenx-sec-v4.0-128k-Q4_K_M.gguf', local_dir='/opt/models/RavenX-Sec-8B-GGUF')"
+```
+
+Re-run the same command to **resume**.
+
+Faster CLI (optional, after `pip install -U hf_transfer`):
+
+```bash
+export HF_HUB_ENABLE_HF_TRANSFER=1
+hf download deadbydawn101/RavenX-Sec-8B-GGUF ravenx-sec-v4.0-128k-Q4_K_M.gguf --local-dir /opt/models/RavenX-Sec-8B-GGUF
+```
+
+#### Method B — `wget` (resume with `-c`)
+
+```bash
+wget -c "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf" -O /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
+```
+
+Leave SSH: wrap it so it keeps going after disconnect:
+
+```bash
+nohup wget -c "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf" -O /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf > /tmp/ravenx-download.log 2>&1 &
+tail -f /tmp/ravenx-download.log
+```
+
+#### Method C — `curl` (resume with `-C -`)
+
+```bash
+curl -L --retry 5 -C - -o /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+```
+
+#### Method D — `aria2c` (multi-connection, often fastest on GPU VMs)
+
+```bash
+sudo apt-get install -y aria2
+aria2c -c -x 16 -s 16 -k 1M -d /opt/models/RavenX-Sec-8B-GGUF -o ravenx-sec-v4.0-128k-Q4_K_M.gguf "https://huggingface.co/deadbydawn101/RavenX-Sec-8B-GGUF/resolve/main/ravenx-sec-v4.0-128k-Q4_K_M.gguf"
+```
+
+Do **not** `git clone` the Hugging Face repo. That can pull every quant (Q4 + Q5 + Q8 + F16, tens of GB). Download **only** the Q4_K_M file.
+
+#### Verify on the VM
+
+```bash
+ls -lh /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
+```
+
+Expect **~4.7G**. If you see a few KB, it is an HTML error page:
+
+```bash
+head -c 200 /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
+rm -f /opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf
+```
+
+Then set `HF_TOKEN` and retry Method A. Next: **§8.4** (build llama.cpp) and **§8.5** (run `llama-server`).
+
+### 7.7 Verify the file (Windows and Linux)
+
+Windows PowerShell:
+
+```powershell
+Get-Item C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf | Select-Object FullName, Length, LastWriteTime
+```
+
+`Length` should be about **5,000,000,000 bytes** (~4.7 GiB).
+
+Windows cmd: `dir` as in §7.5. Linux: `ls -lh` as in §7.6.
+
+If the size is ~1 KB or a few MB, you downloaded an error page — delete it and retry (often needs `HF_TOKEN`).
+
+Expected paths used in §8:
+
+- Windows: `C:\models\RavenX-Sec-8B-GGUF\ravenx-sec-v4.0-128k-Q4_K_M.gguf`
+- Linux VM: `/opt/models/RavenX-Sec-8B-GGUF/ravenx-sec-v4.0-128k-Q4_K_M.gguf`
+
+Never commit the GGUF (`*.gguf` is gitignored).
+
+### 7.8 Download troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---------|--------------|------------|
+| `hf` / `huggingface-cli` not recognized | CLI not on PATH | Use the `python -c "from huggingface_hub import hf_hub_download; ..."` one-liner in §7.4 / §7.5 / §7.6 |
+| `Activate.ps1` cannot be loaded | PowerShell execution policy | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` then retry |
+| `python` is the Microsoft Store stub | No real Python | Install Python 3.12 from python.org and tick **Add to PATH**, or use `py` |
+| File is ~1 KB | HTML error page, not the GGUF | Delete it; set `HF_TOKEN` / `$env:HF_TOKEN`; retry `hf download` |
+| Download dies at 20% | Network drop | Re-run the **same** command (`hf`, `wget -c`, `curl -C -` all resume) |
+| SSH drop killed the VM download | Ran in a raw SSH shell | `tmux new -s ravenx` first, or `nohup wget -c ...` as in §7.6 |
+| `No space left on device` | Disk too small | `df -h`; need ≥ 8 GB free; Vast.ai disk ≥ 40 GB |
+| cmd errors on a backtick `` ` `` | Pasted a PowerShell command | Use the **§7.5** one-liners (no backticks) |
+| `Invoke-WebRequest` hangs / RAM spike | Used `iwr` / `wget` alias in PowerShell | Use **`curl.exe`**, not PowerShell `wget` |
 
 ---
 
@@ -928,7 +1144,7 @@ SCAN_DEFAULT_TENANT_ID=00000000-0000-4000-8000-000000000001
 SCAN_CHAT_RUN_PIPELINE=true
 ```
 
-Local Windows: omit Postgres, keep `SCAN_DEFAULT_MODE=simulate`, follow **§7.3 + §8.1–8.3** for chat. `LLAMA_BASE_URL` stays `http://127.0.0.1:8080`.
+Local Windows: omit Postgres, keep `SCAN_DEFAULT_MODE=simulate`, follow **§7.4 or §7.5 + §8.1–8.3** for chat. `LLAMA_BASE_URL` stays `http://127.0.0.1:8080`.
 
 Demo tenant UUID is stable in config: `00000000-0000-4000-8000-000000000001`.
 
@@ -957,7 +1173,7 @@ df -h
 ### 11.3 Install stack (order)
 
 1. System packages: `git`, `python3.12-venv`, `python3-pip`, `docker.io`, `docker-compose-plugin`, `build-essential`, `cmake`.  
-2. Download GGUF (§7.4).  
+2. Download GGUF (**§7.6** — Hugging Face CLI, `wget`, `curl`, or `aria2c`; use `tmux` so SSH drop does not kill it).  
 3. Build llama.cpp with CUDA (§8.4–8.5); start `llama-server` in `tmux`.  
 4. Clone this repo (`git clone` `dev` branch).  
 5. `cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.  
@@ -1049,7 +1265,7 @@ Follow the LOE weeks. Implementation notes are **where to change code**, not a r
 | ID | Task | How |
 |----|------|-----|
 | W1.1 | GPU VM | Vast.ai first; AWS only if mandated. SSH, `nvidia-smi`. |
-| W1.2 | RavenX | §7. Windows laptop: **§7.3**. GPU VM: §7.4. Q4_K_M. Confirm ~4.7 GB. |
+| W1.2 | RavenX | §7. Windows laptop: **PowerShell §7.4** or **CMD §7.5**. GPU VM: **§7.6**. Q4_K_M. Confirm ~4.7 GB. |
 | W1.3 | llama.cpp | §8. Windows: **prebuilt zip + `llama-server.exe` (§8.1–8.3)**. Linux VM: build §8.4, run §8.5. Prove `/v1/models`. |
 | W1.4 | Backend | Clone `dev`, venv, `requirements.txt`, `.env`, `uvicorn`. **Exit:** `POST /chat` returns RavenX text. |
 
@@ -1164,7 +1380,7 @@ If asked to “just add RAG” during 4.7, refuse and point here.
 | Risk | Mitigation |
 |------|------------|
 | Vast.ai GPU gone / preempted | Snapshot disk; keep GGUF on `/opt/models`; budget AWS g5 as fallback |
-| Hugging Face slow | `wget -c`; start download on day 1 |
+| Hugging Face slow | `wget -c` / `aria2c` / `hf download` (all resume); start on day 1 inside `tmux` |
 | CUDA build fails | CPU llama.cpp works but is slow; say it in the demo |
 | Live scan of unauthorized host | Lab targets only |
 | 8000 exposed without keys | SSH tunnel until W4.1 |
